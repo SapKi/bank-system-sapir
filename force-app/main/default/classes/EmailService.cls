@@ -1,37 +1,23 @@
-/**
- * Service for building outbound email messages.
- * Declared without sharing to ensure email composition is not blocked by sharing rules.
- * Actual delivery is handled by the caller via Messaging.sendEmail() — keeping this class
- * free of DML/email-send logic makes it easy to unit-test in isolation.
- */
+// without sharing — email composition must not be blocked by sharing rules
 public without sharing class EmailService {
 
-    /**
-     * Builds a loan-approval email addressed to the given customer.
-     * The caller is responsible for collecting these messages and sending them
-     * in a single Messaging.sendEmail() call outside any loop.
-     */
-    public static Messaging.SingleEmailMessage buildApprovalEmail(
-        Customer__c    cust,
-        LoanRequest__c lr
-    ) {
+    public static Messaging.SingleEmailMessage buildApprovalEmail(Customer__c cust, LoanRequest__c lr) {
         String customerName = cust.FirstName__c + ' ' + cust.LastName__c;
-        String loanAmount   = lr.LoanAmount__c != null
-            ? lr.LoanAmount__c.format() + ' ₪'
-            : 'לא צוין';
-
-        String body =
-            'שלום ' + customerName + ',\n\n' +
-            'אנו שמחים לידע אותך כי בקשת ההלוואה שלך על סך ' + loanAmount + ' אושרה בהצלחה.\n\n' +
-            'לפרטים נוספים ולתיאום פגישה עם יועץ, אנא פנה/י לסניף הקרוב אליך.\n\n' +
-            'בברכה,\n' +
-            'צוות בנק לאומי';
+        String amount       = lr.LoanAmount__c != null ? lr.LoanAmount__c.format() : 'N/A';
 
         Messaging.SingleEmailMessage mail = new Messaging.SingleEmailMessage();
         mail.setToAddresses(new List<String>{ cust.Email__c });
-        mail.setReplyTo('noreply@bankleumi.co.il');
-        mail.setSubject('בקשת ההלוואה שלך אושרה');
-        mail.setPlainTextBody(body);
+        mail.setReplyTo(LoanRequestConstants.EMAIL_REPLY_TO);
+        mail.setSubject(LoanRequestConstants.EMAIL_SUBJECT);
+        mail.setPlainTextBody(buildApprovalBody(customerName, amount));
         return mail;
+    }
+
+    private static String buildApprovalBody(String customerName, String amount) {
+        return 'Dear ' + customerName + ',\n\n'
+            + 'We are pleased to inform you that your loan request in the amount of '
+            + amount + ' has been approved.\n\n'
+            + 'For further details, please contact your nearest branch.\n\n'
+            + 'Best regards,\nBank Leumi Team';
     }
 }

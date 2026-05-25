@@ -1,23 +1,10 @@
-/**
- * Service for writing AuditLog__c records.
- * Declared without sharing so that audit entries are always persisted,
- * regardless of the running user's sharing rules.
- * Note: without sharing does NOT bypass FLS — field-level access is still enforced.
- */
+// without sharing — audit logs must always be written regardless of the running user's sharing rules
 public without sharing class AuditLogService {
 
-    /**
-     * Builds an AuditLog__c record without performing DML.
-     * Use this method in bulk loops — collect records, then insert once outside the loop.
-     */
+    // Builds an AuditLog__c without DML — collect in a list and insert once outside any loop
     public static AuditLog__c buildLog(
-        Id     relatedId,
-        String objectType,
-        String eventType,
-        String action,
-        String severity,
-        String oldVal,
-        String newVal
+        Id relatedId, String objectType, String eventType,
+        String action, String severity, String oldVal, String newVal
     ) {
         return new AuditLog__c(
             RelatedId__c   = relatedId != null ? String.valueOf(relatedId) : null,
@@ -32,23 +19,15 @@ public without sharing class AuditLogService {
         );
     }
 
-    /**
-     * Builds and immediately inserts a single AuditLog__c record.
-     * Use this for one-off error logging inside catch blocks.
-     */
+    // Builds and immediately inserts one log — use only in catch blocks, not inside loops
     public static void log(
-        Id     relatedId,
-        String objectType,
-        String eventType,
-        String action,
-        String severity,
-        String oldVal,
-        String newVal
+        Id relatedId, String objectType, String eventType,
+        String action, String severity, String oldVal, String newVal
     ) {
         try {
             insert buildLog(relatedId, objectType, eventType, action, severity, oldVal, newVal);
         } catch (DmlException e) {
-            System.debug(LoggingLevel.ERROR, 'AuditLogService.log DML failed: ' + e.getMessage());
+            System.debug(LoggingLevel.ERROR, 'AuditLogService.log failed: ' + e.getMessage());
         }
     }
 }
