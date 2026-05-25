@@ -10,7 +10,13 @@
         "panel": "shared",
         "close": true
       },
-      "problemMatcher": []
+      "problemMatcher": [],
+      "options": {
+        "statusbar": {
+          "label": "$(globe) Open Org",
+          "tooltip": "Open Salesforce Scratch Org"
+        }
+      }
     }
   ]
 }
