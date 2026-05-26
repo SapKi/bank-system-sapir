@@ -2,6 +2,59 @@
 
 ---
 
+## Demo — Quick Start Guide
+
+### Org Details
+
+| | |
+|---|---|
+| Org URL | `https://power-velocity-9198-dev-ed.scratch.my.salesforce.com` |
+| Scratch Org Alias | `my-scratch-org-2` |
+
+### Demo Users
+
+| Role | Name | Username | Password |
+|---|---|---|---|
+| Bank Clerk | Yael Clerk | `yael.clerk.1779796569252@bankleumi-demo.com` | `BankLeumi@2025` |
+| Branch Manager | David Manager | `david.manager.1779794406447@bankleumi-demo.com` | `BankLeumi@2024` |
+
+> To run both sessions simultaneously: use a regular browser window for one user and an Incognito window for the other.
+
+---
+
+### Full Demo Walkthrough
+
+**Step 1 — Setup**
+- Open a regular window and log in as **Yael Clerk** (bank clerk)
+- Open an Incognito window and log in as **David Manager** (branch manager)
+
+**Step 2 — Create a Customer and Loan Request (as Yael)**
+1. App Launcher → **Customers** → **New**
+2. Fill in: First Name, Last Name, Email (use a real address to receive the approval email)
+3. Save → App Launcher → **Loan Requests** → **New**
+4. Select the customer you just created, enter an amount **above 250,000**, set **David Manager** as Assigned Manager
+5. Save
+
+**Step 3 — Manager Receives the Alert (as David)**
+- App Launcher → **Tasks** → a new Task appears: **"High-Value Loan Request — Manager Approval Required"**
+  - Priority: High
+  - Due Date: 3 days from today
+  - Related To: the loan request Yael created
+
+**Step 4 — Approve the Request and Trigger the Email (as David)**
+1. Open the loan request from the Task
+2. Edit → change **Loan Status** to **Approved** → Save
+3. An approval email is automatically sent to the customer's email address
+4. App Launcher → **Audit Logs** → a new entry appears with Action: `StatusChanged`, OldValue: `Draft`, NewValue: `Approved`
+
+---
+
+### Security Note
+
+The `BankLeumiStaff` Permission Set assigned to Yael and David uses `viewAllRecords = true` to allow smooth navigation during the demo. In a Production environment, Sharing Rules and a Role Hierarchy would be configured so that each clerk sees only their own records, and only the assigned manager receives alerts for the requests they are responsible for.
+
+---
+
 ## Table of Contents
 
 1. [Project Overview](#project-overview)

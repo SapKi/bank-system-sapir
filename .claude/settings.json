@@ -16,7 +16,8 @@
       "PowerShell(sf org generate password --target-org my-scratch-org-2 --on-behalf-of \"david.manager.1779794406447@bankleumi-demo.com\" 2>&1)",
       "PowerShell(sf org open --target-org my-scratch-org-2 --path \"/lightning/setup/ManageUsers/page?address=%2F005C200000855CpIAI%3Fpw%3D1\" 2>&1)",
       "PowerShell(sf apex run --target-org my-scratch-org-2 --file \"c:\\\\Users\\\\sapir\\\\Desktop\\\\bank-leumi-sapir\\\\scripts\\\\activate_manager.apex\" 2>&1)",
-      "PowerShell(sf data query --target-org my-scratch-org-2 --query \"SELECT Name, TotalLicenses, UsedLicenses FROM UserLicense\" --result-format human 2>&1)"
+      "PowerShell(sf data query --target-org my-scratch-org-2 --query \"SELECT Name, TotalLicenses, UsedLicenses FROM UserLicense\" --result-format human 2>&1)",
+      "PowerShell(sf project deploy start --target-org my-scratch-org-2 --source-dir \"force-app/main/default/permissionsets/BankLeumiStaff.permissionset-meta.xml\" --json 2>&1)"
     ]
   }
 }
