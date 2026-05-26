@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Profile xmlns="http://soap.sforce.com/2006/04/metadata">
+    <layoutAssignments>
+        <layout>Customer__c-Customer Layout</layout>
+    </layoutAssignments>
+    <layoutAssignments>
+        <layout>LoanRequest__c-Loan Request Layout</layout>
+    </layoutAssignments>
+    <layoutAssignments>
+        <layout>AuditLog__c-Audit Log Layout</layout>
+    </layoutAssignments>
+</Profile>

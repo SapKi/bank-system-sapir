@@ -57,6 +57,9 @@ public class LoanRequestConstants {
     public static final String ACTION_WEBHOOK_RECEIVED       = 'WebhookReceived';
     public static final String ACTION_WEBHOOK_FAILED         = 'WebhookFailed';
 
+    // ── Custom Notification ──────────────────────────────────────────────────────
+    public static final String NOTIF_TYPE_API_NAME = 'HighValueLoanAlert';
+
     // ── Audit Log — Severities ───────────────────────────────────────────────────
     public static final String SEVERITY_INFO  = 'INFO';
     public static final String SEVERITY_WARN  = 'WARN';

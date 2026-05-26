@@ -105,6 +105,37 @@ public with sharing class LoanRequestTriggerHandler implements ITriggerHandler {
                 System.debug(LoggingLevel.ERROR, 'AuditLog insert failed: ' + e.getMessage());
             }
         }
+
+        sendManagerNotifications(newList);
+    }
+
+    private static void sendManagerNotifications(List<LoanRequest__c> newList) {
+        List<CustomNotificationType> notifTypes = [
+            SELECT Id FROM CustomNotificationType
+            WHERE DeveloperName = :LoanRequestConstants.NOTIF_TYPE_API_NAME
+            LIMIT 1
+        ];
+        if (notifTypes.isEmpty()) return;
+        String notifTypeId = notifTypes[0].Id;
+
+        for (LoanRequest__c lr : newList) {
+            if (lr.LoanAmount__c == null
+                || lr.LoanAmount__c <= LoanRequestConstants.HIGH_VALUE_THRESHOLD
+                || lr.AssignedManager__c == null
+                || lr.AlertSent__c != true) {
+                continue;
+            }
+            try {
+                Messaging.CustomNotification notif = new Messaging.CustomNotification();
+                notif.setNotificationTypeId(notifTypeId);
+                notif.setTargetId(lr.Id);
+                notif.setTitle('High-Value Loan Request Requires Approval');
+                notif.setBody('Loan amount: ' + lr.LoanAmount__c.format() + ' — please review and action.');
+                notif.send(new Set<String>{ lr.AssignedManager__c });
+            } catch (Exception e) {
+                System.debug(LoggingLevel.ERROR, 'CustomNotification failed: ' + e.getMessage());
+            }
+        }
     }
 
     // ── Section 2: Status Change — Email + Audit Log ─────────────────────────────

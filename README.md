@@ -50,6 +50,26 @@
 
 ---
 
+### LoanApproval__c — Why You Won't See a Record in the Demo
+
+`LoanApproval__c` is **not** created when status changes to `Approved`. It is created only when status changes to **`Submitted`**, representing a submission to the external core banking system for approval.
+
+The full production flow is:
+
+```
+Draft → Submitted  →  LoanApproval__c created + HTTP POST to external system
+                   ↓
+              External system processes the loan and calls back via Webhook
+                   ↓
+              LoanApproval__c updated to Approved / Rejected
+                   ↓
+              LoanRequest__c status set to Approved → approval email sent to customer
+```
+
+In this demo we skipped directly to `Approved` because there is no real external server. In a Production environment you would also see a `LoanApproval__c` record with `ApprovalStatus = Approved` and a populated `ReceivedResponse__c` timestamp.
+
+---
+
 ### Security Note
 
 The `BankLeumiStaff` Permission Set assigned to Yael and David uses `viewAllRecords = true` to allow smooth navigation during the demo. In a Production environment, Sharing Rules and a Role Hierarchy would be configured so that each clerk sees only their own records, and only the assigned manager receives alerts for the requests they are responsible for.

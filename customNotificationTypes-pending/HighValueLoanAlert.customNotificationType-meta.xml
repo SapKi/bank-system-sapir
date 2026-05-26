@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomNotificationType xmlns="http://soap.sforce.com/2006/04/metadata">
+    <customNotifTypeName>HighValueLoanAlert</customNotifTypeName>
+    <description>Sent to the assigned manager when a loan request exceeds 250,000</description>
+    <desktop>true</desktop>
+    <masterLabel>High Value Loan Alert</masterLabel>
+    <mobile>true</mobile>
+</CustomNotificationType>
