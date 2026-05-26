@@ -18,43 +18,56 @@
     </processMetadataValues>
     <processType>AutoLaunchedFlow</processType>
 
-    <!-- TRIGGER: fires after any LoanRequest__c update where LoanStatus__c has changed -->
-    <start>
-        <locationX>176</locationX>
-        <locationY>0</locationY>
-        <filterLogic>all</filterLogic>
-        <filters>
-            <field>LoanStatus__c</field>
-            <operator>IsChanged</operator>
+    <!-- assignments — set Status__c on the fetched Customer record before update -->
+    <assignments>
+        <description>Stamp Active Customer onto the fetched Customer record</description>
+        <name>Assign_Active_Status</name>
+        <label>Assign Active Status</label>
+        <locationX>44</locationX>
+        <locationY>396</locationY>
+        <assignmentItems>
+            <assignToReference>Get_Customer.Status__c</assignToReference>
+            <operator>Assign</operator>
             <value>
-                <booleanValue>true</booleanValue>
+                <stringValue>Active Customer</stringValue>
             </value>
-        </filters>
-        <object>LoanRequest__c</object>
-        <recordTriggerType>Update</recordTriggerType>
-        <triggerType>RecordAfterSave</triggerType>
+        </assignmentItems>
         <connector>
-            <targetReference>Check_Loan_Status</targetReference>
+            <targetReference>Update_Customer_Active</targetReference>
         </connector>
-    </start>
+    </assignments>
+    <assignments>
+        <description>Stamp Requires Further Action onto the fetched Customer record</description>
+        <name>Assign_Needs_Care_Status</name>
+        <label>Assign Needs Care Status</label>
+        <locationX>308</locationX>
+        <locationY>396</locationY>
+        <assignmentItems>
+            <assignToReference>Get_Customer.Status__c</assignToReference>
+            <operator>Assign</operator>
+            <value>
+                <stringValue>Requires Further Action</stringValue>
+            </value>
+        </assignmentItems>
+        <connector>
+            <targetReference>Update_Customer_Needs_Care</targetReference>
+        </connector>
+    </assignments>
 
-    <!-- DECISION 1: Loan Status
-         Approved  -> update Customer to "Active Customer"
-         Rejected  -> update Customer to "Requires Further Action"
-         Other     -> skip customer update, proceed to high-value check -->
+    <!-- decisions — all grouped -->
     <decisions>
         <description>Routes the flow based on the new LoanStatus__c value</description>
         <name>Check_Loan_Status</name>
         <label>Loan Status?</label>
         <locationX>176</locationX>
-        <locationY>132</locationY>
+        <locationY>264</locationY>
         <defaultConnector>
             <targetReference>Check_High_Value_Loan</targetReference>
         </defaultConnector>
         <defaultConnectorLabel>Other Status</defaultConnectorLabel>
         <rules>
             <name>Outcome_Approved</name>
-            <conditionLogic>all</conditionLogic>
+            <conditionLogic>and</conditionLogic>
             <conditions>
                 <leftValueReference>$Record.LoanStatus__c</leftValueReference>
                 <operator>EqualTo</operator>
@@ -63,13 +76,13 @@
                 </rightValue>
             </conditions>
             <connector>
-                <targetReference>Update_Customer_Active</targetReference>
+                <targetReference>Assign_Active_Status</targetReference>
             </connector>
             <label>Approved</label>
         </rules>
         <rules>
             <name>Outcome_Rejected</name>
-            <conditionLogic>all</conditionLogic>
+            <conditionLogic>and</conditionLogic>
             <conditions>
                 <leftValueReference>$Record.LoanStatus__c</leftValueReference>
                 <operator>EqualTo</operator>
@@ -78,79 +91,21 @@
                 </rightValue>
             </conditions>
             <connector>
-                <targetReference>Update_Customer_Needs_Care</targetReference>
+                <targetReference>Assign_Needs_Care_Status</targetReference>
             </connector>
             <label>Rejected</label>
         </rules>
     </decisions>
-
-    <!-- UPDATE: Customer -> Active Customer (Approved branch) -->
-    <recordUpdates>
-        <description>Sets the linked Customer status to Active Customer following loan approval</description>
-        <name>Update_Customer_Active</name>
-        <label>Set Customer - Active Customer</label>
-        <locationX>44</locationX>
-        <locationY>264</locationY>
-        <connector>
-            <targetReference>Check_High_Value_Loan</targetReference>
-        </connector>
-        <filterLogic>all</filterLogic>
-        <filters>
-            <field>Id</field>
-            <operator>EqualTo</operator>
-            <value>
-                <elementReference>$Record.Customer__c</elementReference>
-            </value>
-        </filters>
-        <inputAssignments>
-            <field>Status__c</field>
-            <value>
-                <stringValue>Active Customer</stringValue>
-            </value>
-        </inputAssignments>
-        <object>Customer__c</object>
-    </recordUpdates>
-
-    <!-- UPDATE: Customer -> Requires Further Action (Rejected branch) -->
-    <recordUpdates>
-        <description>Sets the linked Customer status to Requires Further Action following loan rejection</description>
-        <name>Update_Customer_Needs_Care</name>
-        <label>Set Customer - Requires Further Action</label>
-        <locationX>308</locationX>
-        <locationY>264</locationY>
-        <connector>
-            <targetReference>Check_High_Value_Loan</targetReference>
-        </connector>
-        <filterLogic>all</filterLogic>
-        <filters>
-            <field>Id</field>
-            <operator>EqualTo</operator>
-            <value>
-                <elementReference>$Record.Customer__c</elementReference>
-            </value>
-        </filters>
-        <inputAssignments>
-            <field>Status__c</field>
-            <value>
-                <stringValue>Requires Further Action</stringValue>
-            </value>
-        </inputAssignments>
-        <object>Customer__c</object>
-    </recordUpdates>
-
-    <!-- DECISION 2: High-Value Loan?
-         All three status branches converge here.
-         Fires when LoanAmount__c > 250,000. -->
     <decisions>
         <description>Triggers audit log and manager alert when loan amount exceeds 250,000</description>
         <name>Check_High_Value_Loan</name>
         <label>High Value Loan?</label>
         <locationX>176</locationX>
-        <locationY>396</locationY>
+        <locationY>528</locationY>
         <defaultConnectorLabel>Under Threshold</defaultConnectorLabel>
         <rules>
             <name>Outcome_High_Value</name>
-            <conditionLogic>all</conditionLogic>
+            <conditionLogic>and</conditionLogic>
             <conditions>
                 <leftValueReference>$Record.LoanAmount__c</leftValueReference>
                 <operator>GreaterThan</operator>
@@ -164,14 +119,37 @@
             <label>Over 250,000</label>
         </rules>
     </decisions>
+    <decisions>
+        <description>Only create a manager Task if AssignedManager__c is populated</description>
+        <name>Check_Manager_Assigned</name>
+        <label>Manager Assigned?</label>
+        <locationX>44</locationX>
+        <locationY>792</locationY>
+        <defaultConnectorLabel>No Manager - Skip</defaultConnectorLabel>
+        <rules>
+            <name>Has_Manager</name>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>$Record.AssignedManager__c</leftValueReference>
+                <operator>IsNull</operator>
+                <rightValue>
+                    <booleanValue>false</booleanValue>
+                </rightValue>
+            </conditions>
+            <connector>
+                <targetReference>Create_Manager_Alert_Task</targetReference>
+            </connector>
+            <label>Has Manager</label>
+        </rules>
+    </decisions>
 
-    <!-- CREATE: AuditLog__c record -->
+    <!-- recordCreates — all grouped -->
     <recordCreates>
         <description>Creates an AuditLog__c entry for the high-value loan status change event</description>
         <name>Create_Audit_Log</name>
         <label>Create Audit Log</label>
         <locationX>44</locationX>
-        <locationY>528</locationY>
+        <locationY>660</locationY>
         <connector>
             <targetReference>Check_Manager_Assigned</targetReference>
         </connector>
@@ -225,40 +203,12 @@
         </inputAssignments>
         <object>AuditLog__c</object>
     </recordCreates>
-
-    <!-- DECISION 3: Manager Assigned?
-         Guard before creating the Task — skip if no manager is set. -->
-    <decisions>
-        <description>Only create a manager Task if AssignedManager__c is populated</description>
-        <name>Check_Manager_Assigned</name>
-        <label>Manager Assigned?</label>
-        <locationX>44</locationX>
-        <locationY>660</locationY>
-        <defaultConnectorLabel>No Manager - Skip</defaultConnectorLabel>
-        <rules>
-            <name>Has_Manager</name>
-            <conditionLogic>all</conditionLogic>
-            <conditions>
-                <leftValueReference>$Record.AssignedManager__c</leftValueReference>
-                <operator>IsNull</operator>
-                <rightValue>
-                    <booleanValue>false</booleanValue>
-                </rightValue>
-            </conditions>
-            <connector>
-                <targetReference>Create_Manager_Alert_Task</targetReference>
-            </connector>
-            <label>Has Manager</label>
-        </rules>
-    </decisions>
-
-    <!-- CREATE: Manager Alert Task -->
     <recordCreates>
         <description>Creates a high-priority Task for the assigned manager to review the high-value loan request</description>
         <name>Create_Manager_Alert_Task</name>
         <label>Create Manager Alert Task</label>
         <locationX>44</locationX>
-        <locationY>792</locationY>
+        <locationY>924</locationY>
         <inputAssignments>
             <field>Subject</field>
             <value>
@@ -297,6 +247,74 @@
         </inputAssignments>
         <object>Task</object>
     </recordCreates>
+
+    <!-- recordLookups — fetch the Customer linked to the loan -->
+    <recordLookups>
+        <description>Retrieve the Customer linked to this loan request</description>
+        <name>Get_Customer</name>
+        <label>Get Customer</label>
+        <locationX>176</locationX>
+        <locationY>132</locationY>
+        <assignNullValuesIfNoRecordsFound>false</assignNullValuesIfNoRecordsFound>
+        <connector>
+            <targetReference>Check_Loan_Status</targetReference>
+        </connector>
+        <filterLogic>and</filterLogic>
+        <filters>
+            <field>Id</field>
+            <operator>EqualTo</operator>
+            <value>
+                <elementReference>$Record.Customer__c</elementReference>
+            </value>
+        </filters>
+        <getFirstRecordOnly>true</getFirstRecordOnly>
+        <object>Customer__c</object>
+        <storeOutputAutomatically>true</storeOutputAutomatically>
+    </recordLookups>
+
+    <!-- recordUpdates — update via inputReference (no filters needed) -->
+    <recordUpdates>
+        <description>Saves Active Customer status to the Customer record</description>
+        <name>Update_Customer_Active</name>
+        <label>Update Customer - Active</label>
+        <locationX>44</locationX>
+        <locationY>528</locationY>
+        <connector>
+            <targetReference>Check_High_Value_Loan</targetReference>
+        </connector>
+        <inputReference>Get_Customer</inputReference>
+    </recordUpdates>
+    <recordUpdates>
+        <description>Saves Requires Further Action status to the Customer record</description>
+        <name>Update_Customer_Needs_Care</name>
+        <label>Update Customer - Needs Care</label>
+        <locationX>308</locationX>
+        <locationY>528</locationY>
+        <connector>
+            <targetReference>Check_High_Value_Loan</targetReference>
+        </connector>
+        <inputReference>Get_Customer</inputReference>
+    </recordUpdates>
+
+    <!-- start -->
+    <start>
+        <locationX>176</locationX>
+        <locationY>0</locationY>
+        <filterLogic>and</filterLogic>
+        <filters>
+            <field>LoanStatus__c</field>
+            <operator>IsChanged</operator>
+            <value>
+                <booleanValue>true</booleanValue>
+            </value>
+        </filters>
+        <object>LoanRequest__c</object>
+        <recordTriggerType>Update</recordTriggerType>
+        <triggerType>RecordAfterSave</triggerType>
+        <connector>
+            <targetReference>Get_Customer</targetReference>
+        </connector>
+    </start>
 
     <status>Active</status>
 </Flow>
