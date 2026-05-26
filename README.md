@@ -1,4 +1,4 @@
-# Bank Leumi — Salesforce Home Assignment
+# Bank System — Salesforce Home Assignment
 
 ---
 
@@ -16,8 +16,8 @@
 | Role | Name | Username | Password |
 |---|---|---|---|
 | System Admin | User User | `test-9l5mddq5jg5q@example.com` | `7rb]ikecrzOvt` |
-| Bank Clerk | Yael Clerk | `yael.clerk.1779796569252@bankleumi-demo.com` | `BankLeumi@2025` |
-| Branch Manager | David Manager | `david.manager.1779794406447@bankleumi-demo.com` | `BankLeumi@2025` |
+| Bank Clerk | Yael Clerk | `yael.clerk.1779796569252@banksystem-demo.com` | `BankSystem@2025` |
+| Branch Manager | David Manager | `david.manager.1779794406447@banksystem-demo.com` | `BankSystem@2025` |
 
 > To run both sessions simultaneously: use a regular browser window for one user and an Incognito window for the other.
 
@@ -72,7 +72,7 @@ In this demo we skipped directly to `Approved` because there is no real external
 
 ### Security Note
 
-The `BankLeumiStaff` Permission Set assigned to Yael and David uses `viewAllRecords = true` to allow smooth navigation during the demo. In a Production environment, Sharing Rules and a Role Hierarchy would be configured so that each clerk sees only their own records, and only the assigned manager receives alerts for the requests they are responsible for.
+The `BankSystemStaff` Permission Set assigned to Yael and David uses `viewAllRecords = true` to allow smooth navigation during the demo. In a Production environment, Sharing Rules and a Role Hierarchy would be configured so that each clerk sees only their own records, and only the assigned manager receives alerts for the requests they are responsible for.
 
 ---
 
@@ -85,7 +85,7 @@ Decisions and configurations made during setup that are not derivable from the c
 To send approval emails from a verified domain (rather than from the scratch org's `@example.com` address), an Org-Wide Email Address was added and verified:
 
 - **Setup → Email → Organization-Wide Addresses**
-- Address: `sapirkikoz@gmail.com` (demo; replace with `noreply@bankleumi.co.il` in production)
+- Address: `sapirkikoz@gmail.com` (demo; replace with `noreply@banksystem.co.il` in production)
 - `EmailService.buildApprovalEmail()` was updated to query `OrgWideEmailAddress` (without filtering by address, so it picks up whatever OWA is configured) and call `setOrgWideEmailAddressId()` instead of `setReplyTo()`. This ensures emails arrive from a trusted domain rather than the running user's address.
 
 ### Deliverability
@@ -123,7 +123,7 @@ The following was created solely to support the demo and does not exist in produ
 
 | Artifact | Purpose |
 |---|---|
-| `BankLeumiStaff` Permission Set | Grants Yael and David access to `Customer__c`, `LoanRequest__c`, `AuditLog__c` objects and fields |
+| `BankSystemStaff` Permission Set | Grants Yael and David access to `Customer__c`, `LoanRequest__c`, `AuditLog__c` objects and fields |
 | `Standard Platform User.profile-meta.xml` | Assigns the three custom object layouts to Standard Platform User profile |
 | `Standard User.profile-meta.xml` | Same for Standard User profile |
 | `AuditLog__c-Audit Log Layout` | Page layout exposing all `AuditLog__c` custom fields (Timestamp, Severity, Action, OldValue, NewValue, etc.) |

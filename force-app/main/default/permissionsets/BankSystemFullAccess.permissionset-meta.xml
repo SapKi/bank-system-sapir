@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
-    <label>Bank Leumi Full Access</label>
+    <label>Bank System Full Access</label>
     <hasActivationRequired>false</hasActivationRequired>
 
     <!-- Customer__c fields -->

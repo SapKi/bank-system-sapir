@@ -20,7 +20,7 @@ public without sharing class EmailService {
             mail.setOrgWideEmailAddressId(owas[0].Id);
         } else {
             mail.setReplyTo(LoanRequestConstants.EMAIL_REPLY_TO);
-            mail.setSenderDisplayName('Bank Leumi');
+            mail.setSenderDisplayName('Bank System');
         }
 
         return mail;

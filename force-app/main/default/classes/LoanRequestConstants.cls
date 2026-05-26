@@ -23,13 +23,13 @@ public class LoanRequestConstants {
 
     // ── Email Configuration ──────────────────────────────────────────────────────
     public static final String EMAIL_SUBJECT  = 'Your Loan Request Has Been Approved';
-    public static final String EMAIL_REPLY_TO = 'noreply@bankleumi.co.il';
+    public static final String EMAIL_REPLY_TO = 'noreply@banksystem.co.il';
     // {0} = customer full name, {1} = approved loan amount
     public static final String EMAIL_BODY_TEMPLATE =
         'Dear {0},\n\n' +
         'We are pleased to inform you that your loan request in the amount of {1} has been approved.\n\n' +
         'For further details, please contact your nearest branch.\n\n' +
-        'Best regards,\nBank Leumi Team';
+        'Best regards,\nBank System Team';
 
     // ── Integration Configuration ────────────────────────────────────────────────
     public static final Integer MAX_RETRY_ATTEMPTS    = 3;

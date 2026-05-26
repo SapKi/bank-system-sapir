@@ -21,11 +21,13 @@
       "PowerShell(sf data query --target-org my-scratch-org-2 --use-tooling-api --query \"SELECT Id, Name, SobjectType FROM Layout WHERE SobjectType IN \\('Customer__c','LoanRequest__c','AuditLog__c'\\)\" 2>&1)",
       "PowerShell(sf data query --target-org my-scratch-org-2 --use-tooling-api --query \"SELECT Id, Name, EntityDefinitionId FROM Layout WHERE Name LIKE '%Customer%' OR Name LIKE '%Loan Request%' OR Name LIKE '%Audit Log%'\" 2>&1)",
       "PowerShell(sf apex run --target-org my-scratch-org-2 --file \"c:\\\\Users\\\\sapir\\\\Desktop\\\\bank-leumi-sapir\\\\scripts\\\\assign_layouts.apex\" 2>&1)",
-      "Bash(mv \"c:/Users/sapir/Desktop/bank-leumi-sapir/force-app/main/default/customNotificationTypes\" \"c:/Users/sapir/Desktop/bank-leumi-sapir/customNotificationTypes-pending\")"
+      "Bash(mv \"c:/Users/sapir/Desktop/bank-leumi-sapir/force-app/main/default/customNotificationTypes\" \"c:/Users/sapir/Desktop/bank-leumi-sapir/customNotificationTypes-pending\")",
+      "Bash(git remote *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\sapir\\Desktop\\bank-leumi-sapir\\force-app\\main\\default\\customNotificationTypes",
-      "c:\\Users\\sapir\\Desktop\\bank-leumi-sapir\\scripts"
+      "c:\\Users\\sapir\\Desktop\\bank-leumi-sapir\\scripts",
+      "c:\\Users\\sapir\\Desktop\\bank-leumi-sapir\\force-app\\main\\default\\permissionsets"
     ]
   }
 }
