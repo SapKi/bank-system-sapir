@@ -1,0 +1,68 @@
+<template>
+    <lightning-card title="New Loan Request" icon-name="standard:opportunity">
+        <div class="slds-p-around_medium slds-is-relative">
+
+            <template lwc:if={isLoading}>
+                <lightning-spinner
+                    alternative-text="Saving loan request..."
+                    size="medium"
+                    variant="brand">
+                </lightning-spinner>
+            </template>
+
+            <div class="slds-form slds-form_stacked">
+                <div class="field-row">
+                    <lightning-input
+                        label="Customer Name"
+                        placeholder="First Last"
+                        value={customerName}
+                        data-id="customerName"
+                        onchange={handleInputChange}
+                        required>
+                    </lightning-input>
+                </div>
+
+                <div class="field-row">
+                    <lightning-input
+                        type="number"
+                        label="Loan Amount"
+                        placeholder="e.g. 150000"
+                        value={loanAmount}
+                        data-id="loanAmount"
+                        onchange={handleInputChange}
+                        min="1"
+                        step="any"
+                        required>
+                    </lightning-input>
+                </div>
+
+                <div class="field-row">
+                    <lightning-combobox
+                        label="Loan Status"
+                        value={loanStatus}
+                        options={statusOptions}
+                        data-id="loanStatus"
+                        onchange={handleInputChange}
+                        required>
+                    </lightning-combobox>
+                </div>
+            </div>
+
+            <div class="form-actions slds-m-top_medium">
+                <lightning-button
+                    label="Reset"
+                    variant="neutral"
+                    onclick={handleReset}
+                    disabled={isLoading}>
+                </lightning-button>
+                <lightning-button
+                    label="Save"
+                    variant="brand"
+                    onclick={handleSave}
+                    disabled={isLoading}>
+                </lightning-button>
+            </div>
+
+        </div>
+    </lightning-card>
+</template>

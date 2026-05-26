@@ -1,0 +1,61 @@
+<template>
+    <lightning-card title="Loan Request Summary" icon-name="standard:task2">
+        <div class="slds-p-around_medium slds-is-relative">
+
+            <!-- Spinner overlay during Salesforce refresh -->
+            <template lwc:if={isLoading}>
+                <lightning-spinner
+                    alternative-text="Loading from Salesforce..."
+                    size="medium"
+                    variant="brand">
+                </lightning-spinner>
+            </template>
+
+            <!-- Loan request details -->
+            <template lwc:if={hasData}>
+                <dl class="slds-dl_horizontal summary-list">
+                    <dt class="slds-dl_horizontal__label slds-text-color_weak">Customer Name</dt>
+                    <dd class="slds-dl_horizontal__detail">{loanData.customerName}</dd>
+
+                    <dt class="slds-dl_horizontal__label slds-text-color_weak">Loan Amount</dt>
+                    <dd class="slds-dl_horizontal__detail slds-text-heading_small">{formattedAmount}</dd>
+
+                    <dt class="slds-dl_horizontal__label slds-text-color_weak">Loan Status</dt>
+                    <dd class="slds-dl_horizontal__detail">
+                        <span class={statusBadgeClass}>{loanData.loanStatus}</span>
+                    </dd>
+
+                    <dt class="slds-dl_horizontal__label slds-text-color_weak">Record ID</dt>
+                    <dd class="slds-dl_horizontal__detail">
+                        <a href={recordUrl} target="_blank" title="Open in Salesforce">
+                            {loanData.recordId}
+                        </a>
+                    </dd>
+
+                    <template lwc:if={loanData.createdDate}>
+                        <dt class="slds-dl_horizontal__label slds-text-color_weak">Created</dt>
+                        <dd class="slds-dl_horizontal__detail">{loanData.createdDate}</dd>
+                    </template>
+                </dl>
+            </template>
+
+            <!-- Empty state -->
+            <template lwc:if={showEmptyState}>
+                <div class="empty-state">
+                    <lightning-icon
+                        icon-name="utility:form"
+                        size="large"
+                        class="empty-icon">
+                    </lightning-icon>
+                    <p class="slds-text-heading_small slds-text-color_weak slds-m-top_small">
+                        No loan request yet
+                    </p>
+                    <p class="slds-text-body_small slds-text-color_weak slds-m-top_xx-small">
+                        Fill in the form and click Save to see the summary here.
+                    </p>
+                </div>
+            </template>
+
+        </div>
+    </lightning-card>
+</template>

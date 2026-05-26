@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningMessageChannel xmlns="http://soap.sforce.com/2006/04/metadata">
+    <masterLabel>Loan Request Channel</masterLabel>
+    <isExposed>true</isExposed>
+    <description>Broadcasts a saved LoanRequest record from the form (Component A) to the summary (Component B) without requiring a shared parent component.</description>
+    <lightningMessageFields>
+        <fieldName>recordId</fieldName>
+        <description>Salesforce Id of the newly created LoanRequest__c record</description>
+    </lightningMessageFields>
+    <lightningMessageFields>
+        <fieldName>customerName</fieldName>
+        <description>Customer name as entered in the form</description>
+    </lightningMessageFields>
+    <lightningMessageFields>
+        <fieldName>loanAmount</fieldName>
+        <description>Loan amount value</description>
+    </lightningMessageFields>
+    <lightningMessageFields>
+        <fieldName>loanStatus</fieldName>
+        <description>Selected loan status picklist value</description>
+    </lightningMessageFields>
+</LightningMessageChannel>

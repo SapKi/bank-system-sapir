@@ -1,0 +1,37 @@
+:host {
+    display: block;
+}
+
+.summary-list dt,
+.summary-list dd {
+    padding: 0.35rem 0;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 0.15rem 0.75rem;
+    border-radius: 1rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.status-draft     { background: #f4f6f9; color: #54698d; }
+.status-review    { background: #fef3e2; color: #b67e11; }
+.status-submitted { background: #e9f0ff; color: #1a56c4; }
+.status-approved  { background: #e3f5e1; color: #2e844a; }
+.status-rejected  { background: #fdecea; color: #b51b12; }
+
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 180px;
+    text-align: center;
+}
+
+.empty-icon {
+    --lwc-colorTextIconDefault: #c9c9c9;
+}

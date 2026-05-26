@@ -1,0 +1,13 @@
+:host {
+    display: block;
+}
+
+.field-row {
+    margin-bottom: 0.75rem;
+}
+
+.form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
