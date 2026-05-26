@@ -1,6 +1,6 @@
 Customer__c cust = new Customer__c(
-    FirstName__c = 'ספיר',
-    LastName__c  = 'כיכוז',
+    FirstName__c = 'Sapir',
+    LastName__c  = 'Kikoz',
     Email__c     = 'sapirkikoz@gmail.com'
 );
 insert cust;

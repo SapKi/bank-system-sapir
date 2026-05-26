@@ -7,7 +7,16 @@
       "Bash(cp \"c:/Users/sapir/Desktop/bank-leumi-sapir/scripts/emptyPackage.xml\" \"c:/Users/sapir/Desktop/bank-leumi-sapir/scripts/destructive_pkg/package.xml\")",
       "Bash(cp \"c:/Users/sapir/Desktop/bank-leumi-sapir/scripts/destructiveChanges.xml\" \"c:/Users/sapir/Desktop/bank-leumi-sapir/scripts/destructive_pkg/destructiveChanges.xml\")",
       "Bash(sf org *)",
-      "Bash(sf apex *)"
+      "Bash(sf apex *)",
+      "PowerShell(sf org open --target-org my-scratch-org-2 2>&1)",
+      "PowerShell(sf apex run --target-org my-scratch-org-2 --file \"c:\\\\Users\\\\sapir\\\\Desktop\\\\bank-leumi-sapir\\\\scripts\\\\create_manager_and_loan.apex\" 2>&1)",
+      "PowerShell(sf data query --target-org my-scratch-org-2 --query \"SELECT Id, Subject, Priority, Status, OwnerId, Owner.Name, WhatId FROM Task WHERE OwnerId = '005C200000855CpIAI'\" --result-format human 2>&1)",
+      "PowerShell(sf org open --target-org my-scratch-org-2 --path \"/lightning/setup/ManageUsers/home\" 2>&1)",
+      "PowerShell(sf data query --target-org my-scratch-org-2 --query \"SELECT Id, Username FROM User WHERE LastName = 'Manager'\" --result-format human 2>&1)",
+      "PowerShell(sf org generate password --target-org my-scratch-org-2 --on-behalf-of \"david.manager.1779794406447@bankleumi-demo.com\" 2>&1)",
+      "PowerShell(sf org open --target-org my-scratch-org-2 --path \"/lightning/setup/ManageUsers/page?address=%2F005C200000855CpIAI%3Fpw%3D1\" 2>&1)",
+      "PowerShell(sf apex run --target-org my-scratch-org-2 --file \"c:\\\\Users\\\\sapir\\\\Desktop\\\\bank-leumi-sapir\\\\scripts\\\\activate_manager.apex\" 2>&1)",
+      "PowerShell(sf data query --target-org my-scratch-org-2 --query \"SELECT Name, TotalLicenses, UsedLicenses FROM UserLicense\" --result-format human 2>&1)"
     ]
   }
 }
