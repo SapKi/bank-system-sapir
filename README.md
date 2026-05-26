@@ -15,6 +15,7 @@
 
 | Role | Name | Username | Password |
 |---|---|---|---|
+| System Admin | User User | `test-9l5mddq5jg5q@example.com` | `7rb]ikecrzOvt` |
 | Bank Clerk | Yael Clerk | `yael.clerk.1779796569252@bankleumi-demo.com` | `BankLeumi@2025` |
 | Branch Manager | David Manager | `david.manager.1779794406447@bankleumi-demo.com` | `BankLeumi@2025` |
 
