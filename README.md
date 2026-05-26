@@ -76,6 +76,65 @@ The `BankLeumiStaff` Permission Set assigned to Yael and David uses `viewAllReco
 
 ---
 
+## Session Decisions & Configuration Log
+
+Decisions and configurations made during setup that are not derivable from the code alone.
+
+### Org-Wide Email Address
+
+To send approval emails from a verified domain (rather than from the scratch org's `@example.com` address), an Org-Wide Email Address was added and verified:
+
+- **Setup → Email → Organization-Wide Addresses**
+- Address: `sapirkikoz@gmail.com` (demo; replace with `noreply@bankleumi.co.il` in production)
+- `EmailService.buildApprovalEmail()` was updated to query `OrgWideEmailAddress` (without filtering by address, so it picks up whatever OWA is configured) and call `setOrgWideEmailAddressId()` instead of `setReplyTo()`. This ensures emails arrive from a trusted domain rather than the running user's address.
+
+### Deliverability
+
+- **Setup → Email → Deliverability → Access to Send Email → All Email**
+- Scratch orgs default to `System Email Only`, which silently drops all `Messaging.sendEmail()` calls.
+
+### Custom Notification to Manager (added during session)
+
+In addition to the Task, the trigger now sends a Salesforce Custom Notification (bell icon) to the assigned manager when a high-value loan request is created.
+
+**What was added:**
+- `CustomNotificationType` named `HighValueLoanAlert` (created manually in **Setup → Custom Notifications** because the CLI could not infer this metadata type)
+- `LoanRequestConstants.NOTIF_TYPE_API_NAME = 'HighValueLoanAlert'`
+- `LoanRequestTriggerHandler.sendManagerNotifications()` — queries the notification type, then calls `Messaging.CustomNotification.send()` for every high-value loan whose `AlertSent__c` was just set to `true`
+
+**Why `AlertSent__c = true` as the guard:** the notification fires in the same execution as the Task, after `AlertSent__c` has been flipped, so it only fires once per loan even if the record is updated again later.
+
+**Design note:** In production this notification type would be deployed as metadata. It was created via UI here because `customNotificationType` is not registered in the CLI's metadata type registry for API version 62.0 in this project configuration.
+
+### AuditLog Severity — INFO vs WARN
+
+The `Severity__c` field on `AuditLog__c` is set per status-change event based on the loan amount:
+
+```
+LoanAmount > 250,000  →  WARN
+LoanAmount ≤ 250,000  →  INFO
+```
+
+In the demo all test loans exceed 250,000, so all audit entries appear as `WARN`. This is intentional — high-value status changes are flagged for elevated attention.
+
+### Demo-Only Infrastructure
+
+The following was created solely to support the demo and does not exist in production code:
+
+| Artifact | Purpose |
+|---|---|
+| `BankLeumiStaff` Permission Set | Grants Yael and David access to `Customer__c`, `LoanRequest__c`, `AuditLog__c` objects and fields |
+| `Standard Platform User.profile-meta.xml` | Assigns the three custom object layouts to Standard Platform User profile |
+| `Standard User.profile-meta.xml` | Same for Standard User profile |
+| `AuditLog__c-Audit Log Layout` | Page layout exposing all `AuditLog__c` custom fields (Timestamp, Severity, Action, OldValue, NewValue, etc.) |
+| `scripts/` directory | Anonymous Apex scripts used to create demo data, users, and assignments |
+
+### Page Layout Assignments
+
+Custom layouts were deployed for all three objects but Salesforce does not automatically assign them to non-Admin profiles. Assignments were applied by deploying minimal profile XML files containing only `<layoutAssignments>` blocks — Salesforce merges these into existing profile settings without overwriting other permissions.
+
+---
+
 ## Table of Contents
 
 1. [Project Overview](#project-overview)
