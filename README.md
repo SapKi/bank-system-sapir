@@ -16,7 +16,7 @@
 | Role | Name | Username | Password |
 |---|---|---|---|
 | Bank Clerk | Yael Clerk | `yael.clerk.1779796569252@bankleumi-demo.com` | `BankLeumi@2025` |
-| Branch Manager | David Manager | `david.manager.1779794406447@bankleumi-demo.com` | `BankLeumi@2024` |
+| Branch Manager | David Manager | `david.manager.1779794406447@bankleumi-demo.com` | `BankLeumi@2025` |
 
 > To run both sessions simultaneously: use a regular browser window for one user and an Incognito window for the other.
 
