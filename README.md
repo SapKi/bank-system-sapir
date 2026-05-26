@@ -143,10 +143,11 @@ Custom layouts were deployed for all three objects but Salesforce does not autom
 4. [Layer Responsibilities](#layer-responsibilities)
 5. [Design Decisions](#design-decisions)
 6. [Integration Flow](#integration-flow)
-7. [Security](#security)
-8. [Test Coverage](#test-coverage)
-9. [Deployment](#deployment)
-10. [Governor Limit Notes](#governor-limit-notes)
+7. [Flow — Loan Request Status Manager](#flow--loan-request-status-manager)
+8. [Security](#security)
+9. [Test Coverage](#test-coverage)
+10. [Deployment](#deployment)
+11. [Governor Limit Notes](#governor-limit-notes)
 
 ---
 
@@ -443,6 +444,119 @@ If 50 loans are submitted simultaneously (e.g. a batch import), a single job sen
 → only the 2 failed IDs enter the next attempt, not all 10
 ```
 This minimises unnecessary callouts and reduces load on the external system.
+
+---
+
+## Flow — Loan Request Status Manager
+
+**File:** `force-app/main/default/flows/LoanRequestStatusManager.flow-meta.xml`  
+**Type:** Record-Triggered Flow (After Save)  
+**Object:** `LoanRequest__c`  
+**Trigger condition:** Record is **updated** AND `LoanStatus__c` **IsChanged**
+
+### Flow Architecture
+
+```
+[START]
+   |  Trigger: LoanRequest__c Updated, LoanStatus__c IsChanged
+   v
++-----------------------------+
+|  Decision 1: Loan Status?   |
++-----------------------------+
+   |              |              |
+ Approved      Rejected       Other
+   |              |              |
+   v              v              |
+[Update          [Update         |
+ Customer ->      Customer ->    |
+ Active           Requires       |
+ Customer]        Further        |
+                  Action]        |
+   |              |              |
+   +--------------+--------------+
+                  |
+                  v
+   +----------------------------------+
+   |  Decision 2: High Value Loan?    |
+   |  LoanAmount__c > 250,000         |
+   +----------------------------------+
+         |                    |
+     Over 250k            Under threshold
+         |                    |
+         v                   [END]
+   [Create AuditLog__c]
+         |
+         v
+   +------------------------------+
+   |  Decision 3: Manager         |
+   |  Assigned?                   |
+   +------------------------------+
+       |              |
+   Has Manager     No Manager
+       |              |
+       v             [END]
+   [Create Task
+    for Manager]
+       |
+      [END]
+```
+
+### Steps Breakdown
+
+**Step 1 — Entry Condition (Start)**  
+The Flow is triggered after a `LoanRequest__c` record is saved, only when `LoanStatus__c` has changed. Using `IsChanged` ensures the Flow never fires on unrelated field updates.
+
+**Step 2 — Decision: Loan Status?**
+
+| Outcome | Condition | Next Step |
+|---|---|---|
+| Approved | `LoanStatus__c = 'Approved'` | Update Customer — Active Customer |
+| Rejected | `LoanStatus__c = 'Rejected'` | Update Customer — Requires Further Action |
+| Other (default) | All other values | Skip to High-Value check |
+
+**Step 3a — Update Customer: Active Customer**  
+Filter: `Customer__c.Id = $Record.Customer__c` → Sets `Status__c = 'Active Customer'`
+
+**Step 3b — Update Customer: Requires Further Action**  
+Filter: `Customer__c.Id = $Record.Customer__c` → Sets `Status__c = 'Requires Further Action'`
+
+Both branches converge at Step 4.
+
+**Step 4 — Decision: High Value Loan?**  
+Condition: `LoanAmount__c > 250,000`. If true: create audit record and alert manager. If false: Flow ends.
+
+**Step 5 — Create Audit Log (AuditLog__c)**
+
+| Field | Value |
+|---|---|
+| `RelatedId__c` | `$Record.Id` |
+| `ObjectType__c` | `LoanRequest__c` |
+| `EventType__c` | `DATA_CHANGE` |
+| `Action__c` | `HighValueStatusChange` |
+| `Severity__c` | `WARN` |
+| `OldValue__c` | `$Record__Prior.LoanStatus__c` |
+| `NewValue__c` | `$Record.LoanStatus__c` |
+| `Timestamp__c` | `$Flow.CurrentDateTime` |
+
+**Step 6 — Decision: Manager Assigned?**  
+Guard before creating the Task — skips if `AssignedManager__c` is null. Prevents a DML error when no manager is set.
+
+**Step 7 — Create Manager Alert Task**
+
+| Field | Value |
+|---|---|
+| `Subject` | `High-Value Loan Request - Manager Approval Required` |
+| `Priority` | `High` |
+| `Status` | `Not Started` |
+| `ActivityDate` | Today (`$Flow.CurrentDate`) |
+| `OwnerId` | `$Record.AssignedManager__c` |
+| `WhatId` | `$Record.Id` |
+
+### Flow Design Decisions
+
+- **After-Save trigger** — Used instead of Before-Save because the Flow updates a related record (`Customer__c`). Before-Save flows can only modify the triggering record itself.
+- **`$Record__Prior`** in Audit Log — Captures the previous status value, providing a full before/after trail consistent with the existing `AuditLogService` pattern.
+- **Manager guard (Decision 3)** — Prevents a runtime error when `AssignedManager__c` is blank; mirrors the same guard in `LoanRequestTriggerHandler.handleHighValueAlert`.
 
 ---
 

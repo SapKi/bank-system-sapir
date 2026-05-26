@@ -17,6 +17,16 @@
                 <default>false</default>
                 <label>Inactive</label>
             </value>
+            <value>
+                <fullName>Active Customer</fullName>
+                <default>false</default>
+                <label>Active Customer</label>
+            </value>
+            <value>
+                <fullName>Requires Further Action</fullName>
+                <default>false</default>
+                <label>Requires Further Action</label>
+            </value>
         </valueSetDefinition>
     </valueSet>
 </CustomField>
