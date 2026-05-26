@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rm -rf mdapi_fresh)",
+      "Bash(sf project *)",
+      "PowerShell(cd \"C:\\\\Users\\\\sapir\\\\Desktop\\\\bank-leumi-sapir\"; $orgInfo = \\(sf org display --target-org my-scratch-org-2 --json 2>&1\\) | ConvertFrom-Json; $token = $orgInfo.result.accessToken; $url = $orgInfo.result.instanceUrl; Write-Host \"URL: $url\"; $resp = Invoke-RestMethod -Uri \"$url/services/data/v62.0/sobjects/Customer__c/describe\" -Headers @{Authorization=\"Bearer $token\"} -Method GET; Write-Host \"Fields returned: $\\($resp.fields.Count\\)\"; $resp.fields | Where-Object { $_.custom -eq $true } | Select-Object name, type | Format-Table)",
+      "Bash(cp \"c:/Users/sapir/Desktop/bank-leumi-sapir/scripts/emptyPackage.xml\" \"c:/Users/sapir/Desktop/bank-leumi-sapir/scripts/destructive_pkg/package.xml\")",
+      "Bash(cp \"c:/Users/sapir/Desktop/bank-leumi-sapir/scripts/destructiveChanges.xml\" \"c:/Users/sapir/Desktop/bank-leumi-sapir/scripts/destructive_pkg/destructiveChanges.xml\")"
+    ]
+  }
+}
