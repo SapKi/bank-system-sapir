@@ -7,11 +7,22 @@ public without sharing class EmailService {
 
         Messaging.SingleEmailMessage mail = new Messaging.SingleEmailMessage();
         mail.setToAddresses(new List<String>{ cust.Email__c });
-        mail.setReplyTo(LoanRequestConstants.EMAIL_REPLY_TO);
         mail.setSubject(LoanRequestConstants.EMAIL_SUBJECT);
         mail.setPlainTextBody(
             String.format(LoanRequestConstants.EMAIL_BODY_TEMPLATE, new List<String>{ customerName, amount })
         );
+
+        List<OrgWideEmailAddress> owas = [
+            SELECT Id FROM OrgWideEmailAddress
+            LIMIT 1
+        ];
+        if (!owas.isEmpty()) {
+            mail.setOrgWideEmailAddressId(owas[0].Id);
+        } else {
+            mail.setReplyTo(LoanRequestConstants.EMAIL_REPLY_TO);
+            mail.setSenderDisplayName('Bank Leumi');
+        }
+
         return mail;
     }
 }
