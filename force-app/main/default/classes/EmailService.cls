@@ -9,15 +9,9 @@ public without sharing class EmailService {
         mail.setToAddresses(new List<String>{ cust.Email__c });
         mail.setReplyTo(LoanRequestConstants.EMAIL_REPLY_TO);
         mail.setSubject(LoanRequestConstants.EMAIL_SUBJECT);
-        mail.setPlainTextBody(buildApprovalBody(customerName, amount));
+        mail.setPlainTextBody(
+            String.format(LoanRequestConstants.EMAIL_BODY_TEMPLATE, new List<String>{ customerName, amount })
+        );
         return mail;
-    }
-
-    private static String buildApprovalBody(String customerName, String amount) {
-        return 'Dear ' + customerName + ',\n\n'
-            + 'We are pleased to inform you that your loan request in the amount of '
-            + amount + ' has been approved.\n\n'
-            + 'For further details, please contact your nearest branch.\n\n'
-            + 'Best regards,\nBank Leumi Team';
     }
 }

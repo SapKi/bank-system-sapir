@@ -1,8 +1,23 @@
-public with sharing class LoanRequestTriggerHandler {
+public with sharing class LoanRequestTriggerHandler implements ITriggerHandler {
 
     private static Boolean alreadyRun = false;
 
-    public static void handle(List<LoanRequest__c> newList, Map<Id, LoanRequest__c> oldMap) {
+    // ── ITriggerHandler interface ────────────────────────────────────────────────
+
+    public void afterInsert(List<SObject> newRecords) {
+        processRecords((List<LoanRequest__c>) newRecords, null);
+    }
+
+    public void afterUpdate(List<SObject> newRecords, Map<Id, SObject> oldRecords) {
+        processRecords(
+            (List<LoanRequest__c>) newRecords,
+            (Map<Id, LoanRequest__c>) oldRecords
+        );
+    }
+
+    // ── Core orchestration ───────────────────────────────────────────────────────
+
+    private static void processRecords(List<LoanRequest__c> newList, Map<Id, LoanRequest__c> oldMap) {
         if (alreadyRun) return;
         alreadyRun = true;
         try {
@@ -163,19 +178,21 @@ public with sharing class LoanRequestTriggerHandler {
     }
 
     // ── Section 3: Integration — Dispatch Queueable on Submission ────────────────
+    //
+    // Scalability note: all LoanApproval__c records are inserted in one DML call
+    // and a SINGLE Queueable is enqueued regardless of batch size, avoiding the
+    // 50-enqueued-jobs-per-transaction governor limit.
 
     private static void handleIntegration(List<LoanRequest__c> newList, Map<Id, LoanRequest__c> oldMap) {
         if (oldMap == null) return;
 
         List<LoanApproval__c> approvalsToInsert = new List<LoanApproval__c>();
-        List<LoanRequest__c>  submittedLoans    = new List<LoanRequest__c>();
 
         for (LoanRequest__c lr : newList) {
             LoanRequest__c oldLr = oldMap.get(lr.Id);
             if (oldLr != null
                 && lr.LoanStatus__c == LoanRequestConstants.STATUS_SUBMITTED
                 && oldLr.LoanStatus__c != LoanRequestConstants.STATUS_SUBMITTED) {
-                submittedLoans.add(lr);
                 approvalsToInsert.add(new LoanApproval__c(
                     LoanRequest__c    = lr.Id,
                     ApprovalStatus__c = LoanRequestConstants.APPROVAL_STATUS_PENDING,
@@ -186,14 +203,22 @@ public with sharing class LoanRequestTriggerHandler {
 
         if (approvalsToInsert.isEmpty()) return;
 
-        insert approvalsToInsert;
-
-        for (Integer i = 0; i < submittedLoans.size(); i++) {
-            System.enqueueJob(new LoanApprovalQueueable(
-                submittedLoans[i].Id,
-                approvalsToInsert[i].Id,
-                1
-            ));
+        try {
+            LoanApprovalService.insertApprovals(approvalsToInsert);
+        } catch (DmlException e) {
+            AuditLogService.log(
+                null,
+                LoanRequestConstants.OBJ_LOAN_APPROVAL,
+                LoanRequestConstants.EVENT_INTEGRATION,
+                LoanRequestConstants.ACTION_INTEGRATION_FAILED,
+                LoanRequestConstants.SEVERITY_ERROR,
+                null, e.getMessage()
+            );
+            return;
         }
+
+        List<Id> approvalIds = new List<Id>();
+        for (LoanApproval__c a : approvalsToInsert) approvalIds.add(a.Id);
+        System.enqueueJob(new LoanApprovalQueueable(approvalIds, 1));
     }
 }

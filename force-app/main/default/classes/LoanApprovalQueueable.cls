@@ -1,50 +1,70 @@
+// Scalability: accepts a list of approval IDs so one job handles any batch size.
+// HTTP callouts are bounded by the platform limit of 100 per transaction.
+// On failure, only the failed IDs are re-enqueued, keeping retry scope minimal.
 public class LoanApprovalQueueable implements Queueable, Database.AllowsCallouts {
 
-    private final Id      loanRequestId;
-    private final Id      loanApprovalId;
-    private final Integer attemptNumber;
+    private final List<Id> approvalIds;
+    private final Integer  attemptNumber;
 
-    public LoanApprovalQueueable(Id loanRequestId, Id loanApprovalId, Integer attemptNumber) {
-        this.loanRequestId  = loanRequestId;
-        this.loanApprovalId = loanApprovalId;
-        this.attemptNumber  = attemptNumber;
+    public LoanApprovalQueueable(List<Id> approvalIds, Integer attemptNumber) {
+        this.approvalIds   = approvalIds;
+        this.attemptNumber = attemptNumber;
     }
 
     public void execute(QueueableContext ctx) {
-        LoanApproval__c approval = [
-            SELECT Id, LoanRequest__c, ExternalRefId__c, ApprovalStatus__c
-            FROM   LoanApproval__c
-            WHERE  Id = :loanApprovalId
-        ];
+        Map<Id, LoanApproval__c> approvalMap    = LoanApprovalSelector.getByIds(new Set<Id>(approvalIds));
+        List<LoanApproval__c>    toUpdate        = new List<LoanApproval__c>();
+        List<LoanApproval__c>    failedApprovals = new List<LoanApproval__c>();
 
+        for (LoanApproval__c approval : approvalMap.values()) {
+            try {
+                HttpResponse res = new Http().send(buildRequest(approval));
+                if (res.getStatusCode() == 200 || res.getStatusCode() == 201) {
+                    toUpdate.add(applySuccess(approval, res));
+                    AuditLogService.log(
+                        approval.LoanRequest__c,
+                        LoanRequestConstants.OBJ_LOAN_REQUEST,
+                        LoanRequestConstants.EVENT_INTEGRATION,
+                        LoanRequestConstants.ACTION_INTEGRATION_SENT,
+                        LoanRequestConstants.SEVERITY_INFO,
+                        null, String.valueOf(res.getStatusCode())
+                    );
+                } else {
+                    failedApprovals.add(approval);
+                }
+            } catch (Exception e) {
+                failedApprovals.add(approval);
+            }
+        }
+
+        if (!toUpdate.isEmpty()) {
+            try {
+                LoanApprovalService.updateApprovals(toUpdate);
+            } catch (DmlException e) {
+                System.debug(LoggingLevel.ERROR, 'LoanApproval update failed: ' + e.getMessage());
+            }
+        }
+
+        if (!failedApprovals.isEmpty()) {
+            handleFailures(failedApprovals);
+        }
+    }
+
+    private HttpRequest buildRequest(LoanApproval__c approval) {
         HttpRequest req = new HttpRequest();
         req.setEndpoint(LoanRequestConstants.LOAN_CORE_ENDPOINT);
         req.setMethod('POST');
         req.setHeader('Content-Type', 'application/json');
-        req.setBody(buildPayload(approval));
-        req.setTimeout(30000);
-
-        try {
-            HttpResponse res = new Http().send(req);
-            if (res.getStatusCode() == 200 || res.getStatusCode() == 201) {
-                handleSuccess(approval, res);
-            } else {
-                handleFailure(res.getStatusCode(), res.getBody());
-            }
-        } catch (Exception e) {
-            handleFailure(0, e.getMessage());
-        }
-    }
-
-    private String buildPayload(LoanApproval__c approval) {
-        return JSON.serialize(new Map<String, Object>{
-            'loanRequestId'  => loanRequestId,
-            'loanApprovalId' => loanApprovalId,
+        req.setBody(JSON.serialize(new Map<String, Object>{
+            'loanRequestId'  => approval.LoanRequest__c,
+            'loanApprovalId' => approval.Id,
             'attemptNumber'  => attemptNumber
-        });
+        }));
+        req.setTimeout(30000);
+        return req;
     }
 
-    private void handleSuccess(LoanApproval__c approval, HttpResponse res) {
+    private LoanApproval__c applySuccess(LoanApproval__c approval, HttpResponse res) {
         approval.ReceivedResponse__c = Datetime.now();
         try {
             Map<String, Object> body = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
@@ -52,33 +72,28 @@ public class LoanApprovalQueueable implements Queueable, Database.AllowsCallouts
                 approval.ExternalRefId__c = String.valueOf(body.get('referenceId'));
             }
         } catch (Exception e) {
-            // Response body is optional — continue without parsing
+            // Response body parsing is best-effort — field stays null
         }
-        update approval;
-
-        AuditLogService.log(
-            loanRequestId,
-            LoanRequestConstants.OBJ_LOAN_REQUEST,
-            LoanRequestConstants.EVENT_INTEGRATION,
-            LoanRequestConstants.ACTION_INTEGRATION_SENT,
-            LoanRequestConstants.SEVERITY_INFO,
-            null, String.valueOf(res.getStatusCode())
-        );
+        return approval;
     }
 
-    private void handleFailure(Integer statusCode, String errorBody) {
+    private void handleFailures(List<LoanApproval__c> failedApprovals) {
         if (attemptNumber < LoanRequestConstants.MAX_RETRY_ATTEMPTS) {
-            // Re-enqueue with incremented attempt counter (exponential backoff is platform-paced)
-            System.enqueueJob(new LoanApprovalQueueable(loanRequestId, loanApprovalId, attemptNumber + 1));
+            List<Id> failedIds = new List<Id>();
+            for (LoanApproval__c a : failedApprovals) failedIds.add(a.Id);
+            // Re-enqueue only the failed subset; platform pacing provides backoff
+            System.enqueueJob(new LoanApprovalQueueable(failedIds, attemptNumber + 1));
         } else {
-            AuditLogService.log(
-                loanRequestId,
-                LoanRequestConstants.OBJ_LOAN_REQUEST,
-                LoanRequestConstants.EVENT_INTEGRATION,
-                LoanRequestConstants.ACTION_INTEGRATION_FAILED,
-                LoanRequestConstants.SEVERITY_ERROR,
-                String.valueOf(statusCode), errorBody
-            );
+            for (LoanApproval__c a : failedApprovals) {
+                AuditLogService.log(
+                    a.LoanRequest__c,
+                    LoanRequestConstants.OBJ_LOAN_REQUEST,
+                    LoanRequestConstants.EVENT_INTEGRATION,
+                    LoanRequestConstants.ACTION_INTEGRATION_FAILED,
+                    LoanRequestConstants.SEVERITY_ERROR,
+                    String.valueOf(attemptNumber), 'Max retries exceeded'
+                );
+            }
         }
     }
 }

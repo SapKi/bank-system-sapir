@@ -10,40 +10,34 @@ global without sharing class LoanApprovalWebhook {
         String requestBody = req.requestBody != null ? req.requestBody.toString() : '';
 
         if (!isSignatureValid(req, requestBody)) {
-            res.statusCode    = 401;
-            res.responseBody  = Blob.valueOf('{"error":"Invalid or missing HMAC-SHA256 signature"}');
+            res.statusCode   = 401;
+            res.responseBody = Blob.valueOf('{"error":"Invalid or missing HMAC-SHA256 signature"}');
             return;
         }
 
         try {
-            Map<String, Object> payload      = (Map<String, Object>) JSON.deserializeUntyped(requestBody);
-            String externalRefId  = String.valueOf(payload.get('referenceId'));
-            String approvalStatus = String.valueOf(payload.get('status'));
+            Map<String, Object> payload       = (Map<String, Object>) JSON.deserializeUntyped(requestBody);
+            String externalRefId   = String.valueOf(payload.get('referenceId'));
+            String approvalStatus  = String.valueOf(payload.get('status'));
             String rejectionReason = payload.containsKey('rejectionReason')
                 ? String.valueOf(payload.get('rejectionReason')) : null;
 
-            List<LoanApproval__c> approvals = [
-                SELECT Id, LoanRequest__c, ApprovalStatus__c
-                FROM   LoanApproval__c
-                WHERE  ExternalRefId__c = :externalRefId
-                LIMIT  1
-            ];
+            LoanApproval__c approval = LoanApprovalSelector.getByExternalRefId(externalRefId);
 
-            if (approvals.isEmpty()) {
+            if (approval == null) {
                 res.statusCode   = 404;
                 res.responseBody = Blob.valueOf('{"error":"LoanApproval not found for referenceId: ' + externalRefId + '"}');
                 return;
             }
 
-            LoanApproval__c approval  = approvals[0];
-            String          oldStatus = approval.ApprovalStatus__c;
-
+            String oldStatus = approval.ApprovalStatus__c;
             approval.ApprovalStatus__c   = approvalStatus;
             approval.ReceivedResponse__c = Datetime.now();
             if (String.isNotBlank(rejectionReason)) {
                 approval.RejectionReason__c = rejectionReason;
             }
-            update approval;
+
+            LoanApprovalService.updateApprovals(new List<LoanApproval__c>{ approval });
 
             AuditLogService.log(
                 approval.LoanRequest__c,

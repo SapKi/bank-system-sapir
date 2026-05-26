@@ -10,6 +10,7 @@ public class LoanApprovalQueueable_Test {
         );
         insert cust;
 
+        // Amount below threshold so setup does not generate any WARN AuditLogs
         insert new LoanRequest__c(
             Customer__c   = cust.Id,
             LoanAmount__c = 50000,
@@ -60,7 +61,7 @@ public class LoanApprovalQueueable_Test {
 
         Test.setMock(HttpCalloutMock.class, new SuccessMock());
         Test.startTest();
-        System.enqueueJob(new LoanApprovalQueueable(lr.Id, approval.Id, 1));
+        System.enqueueJob(new LoanApprovalQueueable(new List<Id>{ approval.Id }, 1));
         Test.stopTest();
 
         LoanApproval__c updated = [SELECT ExternalRefId__c, ReceivedResponse__c FROM LoanApproval__c WHERE Id = :approval.Id];
@@ -70,9 +71,9 @@ public class LoanApprovalQueueable_Test {
         List<AuditLog__c> logs = [
             SELECT Action__c, Severity__c FROM AuditLog__c WHERE RelatedId__c = :String.valueOf(lr.Id)
         ];
-        System.assertEquals(1,                                            logs.size(),          'One INFO AuditLog expected');
-        System.assertEquals(LoanRequestConstants.ACTION_INTEGRATION_SENT, logs[0].Action__c,   'Action must be IntegrationSent');
-        System.assertEquals(LoanRequestConstants.SEVERITY_INFO,           logs[0].Severity__c, 'Severity must be INFO');
+        System.assertEquals(1,                                             logs.size(),          'One INFO AuditLog expected');
+        System.assertEquals(LoanRequestConstants.ACTION_INTEGRATION_SENT, logs[0].Action__c,    'Action must be IntegrationSent');
+        System.assertEquals(LoanRequestConstants.SEVERITY_INFO,           logs[0].Severity__c,  'Severity must be INFO');
     }
 
     @isTest
@@ -82,34 +83,28 @@ public class LoanApprovalQueueable_Test {
 
         Test.setMock(HttpCalloutMock.class, new FailureMock());
         Test.startTest();
-        System.enqueueJob(new LoanApprovalQueueable(lr.Id, approval.Id, LoanRequestConstants.MAX_RETRY_ATTEMPTS));
+        System.enqueueJob(new LoanApprovalQueueable(new List<Id>{ approval.Id }, LoanRequestConstants.MAX_RETRY_ATTEMPTS));
         Test.stopTest();
 
         List<AuditLog__c> logs = [
             SELECT Action__c, Severity__c FROM AuditLog__c WHERE RelatedId__c = :String.valueOf(lr.Id)
         ];
         System.assertEquals(1,                                               logs.size(),          'One ERROR AuditLog expected for dead letter');
-        System.assertEquals(LoanRequestConstants.ACTION_INTEGRATION_FAILED,  logs[0].Action__c,   'Action must be IntegrationFailed');
-        System.assertEquals(LoanRequestConstants.SEVERITY_ERROR,             logs[0].Severity__c, 'Severity must be ERROR');
+        System.assertEquals(LoanRequestConstants.ACTION_INTEGRATION_FAILED, logs[0].Action__c,    'Action must be IntegrationFailed');
+        System.assertEquals(LoanRequestConstants.SEVERITY_ERROR,            logs[0].Severity__c,  'Severity must be ERROR');
     }
 
-    // Salesforce test context executes chained Queueables synchronously, which limits
-    // end-to-end retry chain testing. Instead we verify the boundary condition directly:
-    // the attempt just before the threshold (MAX - 1) must NOT dead-letter,
-    // whereas MAX must. This is exercised by testFailureAtMaxRetries_LogsDeadLetter.
+    // Validates the retry threshold constant is well-formed.
+    // End-to-end chain testing is constrained by the platform's 1-level Queueable
+    // chaining limit in test context; retry behaviour is covered by the dead-letter test above.
     @isTest
     static void testRetryBoundary_MaxAttemptIsExclusive() {
-        // MAX_RETRY_ATTEMPTS defines the last attempt that re-enqueues.
-        // An attempt equal to MAX should dead-letter; one below should not.
-        System.assert(
-            LoanRequestConstants.MAX_RETRY_ATTEMPTS > 0,
-            'MAX_RETRY_ATTEMPTS must be a positive integer'
-        );
+        System.assert(LoanRequestConstants.MAX_RETRY_ATTEMPTS > 0, 'MAX_RETRY_ATTEMPTS must be positive');
         Integer belowMax = LoanRequestConstants.MAX_RETRY_ATTEMPTS - 1;
-        System.assert(belowMax < LoanRequestConstants.MAX_RETRY_ATTEMPTS, 'Below-max attempt must re-enqueue');
+        System.assert(belowMax < LoanRequestConstants.MAX_RETRY_ATTEMPTS, 'An attempt below max must re-enqueue');
         System.assert(
             !(LoanRequestConstants.MAX_RETRY_ATTEMPTS < LoanRequestConstants.MAX_RETRY_ATTEMPTS),
-            'Max attempt must dead-letter, not re-enqueue'
+            'An attempt equal to max must dead-letter'
         );
     }
 }

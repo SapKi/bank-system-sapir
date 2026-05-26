@@ -24,12 +24,18 @@ public class LoanRequestConstants {
     // ── Email Configuration ──────────────────────────────────────────────────────
     public static final String EMAIL_SUBJECT  = 'Your Loan Request Has Been Approved';
     public static final String EMAIL_REPLY_TO = 'noreply@bankleumi.co.il';
+    // {0} = customer full name, {1} = approved loan amount
+    public static final String EMAIL_BODY_TEMPLATE =
+        'Dear {0},\n\n' +
+        'We are pleased to inform you that your loan request in the amount of {1} has been approved.\n\n' +
+        'For further details, please contact your nearest branch.\n\n' +
+        'Best regards,\nBank Leumi Team';
 
     // ── Integration Configuration ────────────────────────────────────────────────
     public static final Integer MAX_RETRY_ATTEMPTS    = 3;
     public static final String  LOAN_CORE_ENDPOINT    = 'callout:LoanCoreAPI/loans/submit';
-    // WEBHOOK_SECRET must be rotated per environment via a Custom Metadata record in production
-    public static final String  WEBHOOK_SECRET        = 'change-me-in-production';
+    // WEBHOOK_SECRET must be overridden per environment via a Custom Metadata record in production
+    public static final String  WEBHOOK_SECRET         = 'change-me-in-production';
     public static final String  WEBHOOK_HMAC_ALGORITHM = 'hmacSHA256';
 
     // ── Audit Log — Event Types ──────────────────────────────────────────────────
@@ -37,7 +43,8 @@ public class LoanRequestConstants {
     public static final String EVENT_INTEGRATION = 'INTEGRATION';
 
     // ── Audit Log — Object Types ─────────────────────────────────────────────────
-    public static final String OBJ_LOAN_REQUEST = 'LoanRequest__c';
+    public static final String OBJ_LOAN_REQUEST  = 'LoanRequest__c';
+    public static final String OBJ_LOAN_APPROVAL = 'LoanApproval__c';
 
     // ── Audit Log — Actions ──────────────────────────────────────────────────────
     public static final String ACTION_STATUS_CHANGED         = 'StatusChanged';
