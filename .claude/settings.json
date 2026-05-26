@@ -24,7 +24,8 @@
       "Bash(mv \"c:/Users/sapir/Desktop/bank-leumi-sapir/force-app/main/default/customNotificationTypes\" \"c:/Users/sapir/Desktop/bank-leumi-sapir/customNotificationTypes-pending\")"
     ],
     "additionalDirectories": [
-      "c:\\Users\\sapir\\Desktop\\bank-leumi-sapir\\force-app\\main\\default\\customNotificationTypes"
+      "c:\\Users\\sapir\\Desktop\\bank-leumi-sapir\\force-app\\main\\default\\customNotificationTypes",
+      "c:\\Users\\sapir\\Desktop\\bank-leumi-sapir\\scripts"
     ]
   }
 }

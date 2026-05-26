@@ -410,6 +410,40 @@ LoanApprovalWebhook.handleWebhook()
 
 Platform job pacing between enqueue and execution provides implicit backoff. Retry scope is minimal: only IDs that failed on the previous attempt are re-enqueued.
 
+### Why Queueable Matters in Production
+
+**1. Triggers cannot make HTTP callouts.**
+Salesforce prohibits outbound HTTP calls from within a trigger context. Without `LoanApprovalQueueable`, the external integration simply cannot exist — it must run asynchronously.
+
+**2. The user is never blocked.**
+```
+User clicks Save → Trigger runs → Queueable is enqueued → User sees Success immediately
+                                          ↓
+                             HTTP POST to core banking runs in the background
+```
+Without this pattern, every loan submission would block the UI for up to 30 seconds waiting for an external HTTP response — a poor and fragile user experience.
+
+**3. Automatic retry on failure.**
+If the external system is temporarily unavailable or the network drops, the job handles recovery without any manual intervention:
+```
+Attempt 1 fails → Attempt 2 → Attempt 3 → ERROR AuditLog (dead letter)
+```
+
+**4. Bulk-safe — handles batches of up to 200 records.**
+```apex
+System.enqueueJob(new LoanApprovalQueueable(approvalIds, 1));
+//                                           ^^^^^^^^^^^
+//                                 full list — one job, regardless of batch size
+```
+If 50 loans are submitted simultaneously (e.g. a batch import), a single job sends them all. Enqueueing one job per loan would hit the 50-enqueued-jobs-per-transaction governor limit and crash the entire operation.
+
+**5. Partial retry — only failed IDs are re-enqueued.**
+```
+10 loans submitted → 8 succeed, 2 fail
+→ only the 2 failed IDs enter the next attempt, not all 10
+```
+This minimises unnecessary callouts and reduces load on the external system.
+
 ---
 
 ## Security
