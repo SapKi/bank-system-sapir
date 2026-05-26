@@ -144,10 +144,11 @@ Custom layouts were deployed for all three objects but Salesforce does not autom
 5. [Design Decisions](#design-decisions)
 6. [Integration Flow](#integration-flow)
 7. [Flow — Loan Request Status Manager](#flow--loan-request-status-manager)
-8. [Security](#security)
-9. [Test Coverage](#test-coverage)
-10. [Deployment](#deployment)
-11. [Governor Limit Notes](#governor-limit-notes)
+8. [LWC — Interactive Loan Request Form](#lwc--interactive-loan-request-form)
+9. [Security](#security)
+10. [Test Coverage](#test-coverage)
+11. [Deployment](#deployment)
+12. [Governor Limit Notes](#governor-limit-notes)
 
 ---
 
@@ -228,12 +229,21 @@ Master-Detail child of `LoanRequest__c`.
 ## Architecture
 
 ```
+LWC (Lightning Web Components)
+  ├── loanRequestForm        Component A — form input        (publishes via LMS)
+  ├── loanRequestSummary     Component B — data display      (subscribes via LMS, APPLICATION_SCOPE)
+  ├── loanRequestConstants   Shared JS constants module      (isExposed: false)
+  └── LoanRequestFormController  @AuraEnabled entry point   (with sharing)
+          ├── CustomerSelector   getIdByName()
+          └── LoanRequestSelector  getById()
+
 Trigger
   └── TriggerDispatcher                   Routing Layer
           └── LoanRequestTriggerHandler   Business Logic     (with sharing)
                   │
                   ├── CustomerSelector    Selector Layer     (with sharing)
                   ├── LoanApprovalSelector                   (with sharing)
+                  ├── LoanRequestSelector                    (with sharing)
                   ├── LoanApprovalService Service Layer      (without sharing)
                   ├── AuditLogService     Audit Layer        (without sharing)
                   ├── EmailService        Messaging Layer    (without sharing)
@@ -261,13 +271,18 @@ Shared Infrastructure
 
 ## Layer Responsibilities
 
-| Class | Sharing | Responsibility |
+| Class / Module | Sharing | Responsibility |
 |---|---|---|
+| `loanRequestForm` (LWC) | — | Component A — form input, validation, Apex call, LMS publish |
+| `loanRequestSummary` (LWC) | — | Component B — subscribes with `APPLICATION_SCOPE`; optimistic display then Apex refresh |
+| `loanRequestConstants` (LWC) | — | Shared JS constants: status options, badge classes, locale, currency, object API name |
+| `LoanRequestFormController` | `with sharing` | Thin `@AuraEnabled` controller — parses input, one `insert`, delegates all SOQL to selectors |
+| `LoanRequestSelector` | `with sharing` | Owns all SOQL against `LoanRequest__c`; used by the form controller |
 | `LoanRequestTrigger` | — | One-liner trigger; delegates to `TriggerDispatcher`. Contains no logic. |
 | `ITriggerHandler` | — | Interface contract: `afterInsert` / `afterUpdate`. Decouples triggers from handler implementations. |
 | `TriggerDispatcher` | — | Routes `Trigger.*` context flags to the correct interface method. Adding a new object trigger requires only a new `ITriggerHandler` — this class never changes. |
 | `LoanRequestTriggerHandler` | `with sharing` | Implements `ITriggerHandler`. Orchestrates all business logic for `LoanRequest__c`. Enforces sharing rules. |
-| `CustomerSelector` | `with sharing` | Owns all SOQL against `Customer__c`. Returns typed maps for O(1) access. |
+| `CustomerSelector` | `with sharing` | Owns all SOQL against `Customer__c`. Returns typed maps for O(1) access; also exposes `getIdByName()` for controller use. |
 | `LoanApprovalSelector` | `with sharing` | Owns all SOQL against `LoanApproval__c`. Look up by Id set or by `ExternalRefId__c`. |
 | `LoanApprovalService` | `without sharing` | Owns all DML against `LoanApproval__c`. Called from trigger, async job, and REST resource — must write regardless of sharing context. |
 | `AuditLogService` | `without sharing` | Provides `buildLog()` (returns record, no DML) for bulk collection and `log()` (build + insert immediately) for catch blocks. Audit writes must always succeed. |
@@ -560,6 +575,75 @@ Guard before creating the Task — skips if `AssignedManager__c` is null. Preven
 
 ---
 
+## LWC — Interactive Loan Request Form
+
+**Components:** `loanRequestForm` (A), `loanRequestSummary` (B)  
+**Communication:** Lightning Message Service — `LoanRequestChannel__c`  
+**Apex:** `LoanRequestFormController` → `CustomerSelector` + `LoanRequestSelector`
+
+### Component Communication — Why LMS?
+
+Component A and Component B have **no shared parent**. This rules out `CustomEvent` bubbling and `@api` property binding — both require a direct parent-child relationship. The only mechanism that allows two independently placed components to communicate is **Lightning Message Service** with `APPLICATION_SCOPE`.
+
+| Mechanism | Requires shared parent | Works across page regions |
+|---|---|---|
+| `CustomEvent` + `addEventListener` | Yes | No |
+| `@api` property binding | Yes (direct) | No |
+| **Lightning Message Service** | **No** | **Yes** |
+
+### Data Flow
+
+```
+User fills form
+    ↓
+[loanRequestForm — Component A]
+    │  validates input
+    │  saveLoanRequest()  @AuraEnabled → spinner ON
+    ↓
+[LoanRequestFormController]
+    │  CustomerSelector.getIdByName()     resolve "First Last" → Customer__c Id
+    │  insert LoanRequest__c              single DML
+    │  LoanRequestSelector.getById()      return full record
+    ↓
+    │  publish(LoanRequestChannel__c, { recordId, customerName, loanAmount, loanStatus })
+    │  success toast → form reset → spinner OFF
+    ↓
+[loanRequestSummary — Component B]  ← subscribed with APPLICATION_SCOPE
+    │  optimistic display: renders LMS message data immediately
+    │
+    │  getLoanRequest()  @AuraEnabled → spinner ON
+    ↓
+[LoanRequestSelector.getById()]     fresh record from Salesforce
+    ↓
+    Component B updates display with authoritative SF data → spinner OFF
+```
+
+### Optimistic UI Pattern
+
+Component B shows data from the LMS message immediately — before the Apex refresh completes — so the UI feels instant. The Apex call then replaces the optimistic data with the authoritative record (including server-computed fields like `CreatedDate` and the resolved `Customer__r` relationship).
+
+```
+LMS message received  →  display immediately (optimistic)
+getLoanRequest() call  →  spinner ON
+SF data returned       →  spinner OFF, display updated with authoritative data
+```
+
+### Design Decisions
+
+**`APPLICATION_SCOPE` subscription**  
+Without `APPLICATION_SCOPE`, an LMS subscriber only receives messages from within the same DOM subtree. Since Component B is placed independently (no shared parent with A), `APPLICATION_SCOPE` is required. The subscription is created in `connectedCallback` and released in `disconnectedCallback` to prevent memory leaks.
+
+**Shared constants module (`c/loanRequestConstants`)**  
+All configurable values are extracted to a dedicated LWC utility module with `isExposed: false`: status picklist options, default status, status-to-badge-class mapping, currency code, locale, and Salesforce object API name. Neither component contains magic strings.
+
+**Layering — controller stays thin**  
+`LoanRequestFormController` follows the same selector pattern as the rest of the project. No inline SOQL, no business logic methods. All queries are owned by `CustomerSelector` and `LoanRequestSelector`; the controller's only responsibility is to accept `@AuraEnabled` input, execute one `insert`, and delegate reads.
+
+**Customer name resolution**  
+The form accepts a free-text "Customer Name" field. The controller parses it into `firstName`/`lastName` tokens and delegates the SOQL to `CustomerSelector.getIdByName()`. If no match is found, `LoanRequest__c` is saved without a customer link — the form works standalone without requiring pre-existing customer records.
+
+---
+
 ## Security
 
 ### HMAC-SHA256 Signature Validation
@@ -589,6 +673,15 @@ See the [Sharing Decisions table](#with-sharing-vs-without-sharing) above. `Audi
 ---
 
 ## Test Coverage
+
+### `LoanRequestFormControllerTest` (4 methods)
+
+| Method | Scenario |
+|---|---|
+| `saveLoanRequest_withMatchingCustomer_linksRecord` | Customer found by name → `Customer__r` populated on returned record |
+| `saveLoanRequest_withUnknownCustomer_savesWithoutLink` | No matching customer → record saved, `Customer__r` is null |
+| `saveLoanRequest_withBlankCustomerName_savesWithoutLink` | Empty name → no lookup attempted, record saved cleanly |
+| `getLoanRequest_returnsExpectedRecord` | Direct selector call → correct Id, amount, status, `CreatedDate` |
 
 ### `LoanRequestTriggerHandler_Test` (7 methods)
 
@@ -622,7 +715,7 @@ See the [Sharing Decisions table](#with-sharing-vs-without-sharing) above. `Audi
 | `testMissingSignature_Returns401` | Missing header → HTTP 401, no data change |
 | `testUnknownReferenceId_Returns404` | Unknown `referenceId` → HTTP 404 |
 
-**Overall: 18 / 18 tests pass. 100% pass rate.**
+**Overall: 22 / 22 tests pass. 100% pass rate.**
 
 All test data is built in `@TestSetup`. No `seeAllData=true`. No hardcoded Ids. Loan amounts in setup methods are below the 250,000 threshold to avoid noise from the high-value alert path.
 

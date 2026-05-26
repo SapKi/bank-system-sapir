@@ -12,14 +12,16 @@
 
             <div class="slds-form slds-form_stacked">
                 <div class="field-row">
-                    <lightning-input
-                        label="Customer Name"
-                        placeholder="First Last"
-                        value={customerName}
-                        data-id="customerName"
-                        onchange={handleInputChange}
+                    <lightning-record-picker
+                        label="Customer"
+                        placeholder="Search by first or last name..."
+                        object-api-name="Customer__c"
+                        value={customerId}
+                        display-info={displayInfo}
+                        matching-info={matchingInfo}
+                        onchange={handleCustomerChange}
                         required>
-                    </lightning-input>
+                    </lightning-record-picker>
                 </div>
 
                 <div class="field-row">

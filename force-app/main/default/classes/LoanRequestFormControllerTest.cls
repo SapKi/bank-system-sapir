@@ -11,45 +11,33 @@ private class LoanRequestFormControllerTest {
     }
 
     @IsTest
-    static void saveLoanRequest_withMatchingCustomer_linksRecord() {
+    static void saveLoanRequest_withCustomer_linksRecord() {
+        Id custId = [SELECT Id FROM Customer__c LIMIT 1].Id;
+
         Test.startTest();
         LoanRequest__c result = LoanRequestFormController.saveLoanRequest(
-            'Jane Smith', 120000, 'Draft'
-        );
-        Test.stopTest();
-
-        Assert.isNotNull(result.Id,            'Record Id should be populated');
-        Assert.areEqual(120000,   result.LoanAmount__c, 'Loan amount should match');
-        Assert.areEqual('Draft',  result.LoanStatus__c, 'Loan status should match');
-        Assert.isNotNull(result.Customer__r,             'Customer relationship should be resolved');
-        Assert.areEqual('Jane',  result.Customer__r.FirstName__c, 'First name should match');
-        Assert.areEqual('Smith', result.Customer__r.LastName__c,  'Last name should match');
-    }
-
-    @IsTest
-    static void saveLoanRequest_withUnknownCustomer_savesWithoutLink() {
-        Test.startTest();
-        LoanRequest__c result = LoanRequestFormController.saveLoanRequest(
-            'Unknown Person', 50000, 'In Review'
+            custId, 120000, 'Draft'
         );
         Test.stopTest();
 
         Assert.isNotNull(result.Id,           'Record Id should be populated');
-        Assert.areEqual(50000,      result.LoanAmount__c, 'Loan amount should match');
-        Assert.areEqual('In Review', result.LoanStatus__c, 'Loan status should match');
-        Assert.isNull(result.Customer__r, 'Customer lookup should be null when not found');
+        Assert.areEqual(120000,  result.LoanAmount__c, 'Loan amount should match');
+        Assert.areEqual('Draft', result.LoanStatus__c, 'Loan status should match');
+        Assert.areEqual(custId,  result.Customer__c,   'Customer lookup should be set');
     }
 
     @IsTest
-    static void saveLoanRequest_withBlankCustomerName_savesWithoutLink() {
+    static void saveLoanRequest_withNullCustomer_savesCleanly() {
         Test.startTest();
         LoanRequest__c result = LoanRequestFormController.saveLoanRequest(
-            '', 75000, 'Submitted'
+            null, 50000, 'In Review'
         );
         Test.stopTest();
 
-        Assert.isNotNull(result.Id, 'Record Id should be populated');
-        Assert.isNull(result.Customer__r, 'Customer lookup should be null for blank name');
+        Assert.isNotNull(result.Id,            'Record Id should be populated');
+        Assert.areEqual(50000,      result.LoanAmount__c, 'Loan amount should match');
+        Assert.areEqual('In Review', result.LoanStatus__c, 'Status should match');
+        Assert.isNull(result.Customer__r, 'Customer relationship should be null');
     }
 
     @IsTest
@@ -64,9 +52,28 @@ private class LoanRequestFormControllerTest {
         LoanRequest__c result = LoanRequestFormController.getLoanRequest(lr.Id);
         Test.stopTest();
 
-        Assert.areEqual(lr.Id,    result.Id,            'Ids should match');
-        Assert.areEqual(200000,   result.LoanAmount__c,  'Loan amount should match');
-        Assert.areEqual('Approved', result.LoanStatus__c, 'Status should match');
+        Assert.areEqual(lr.Id,      result.Id,            'Ids should match');
+        Assert.areEqual(200000,     result.LoanAmount__c,  'Loan amount should match');
+        Assert.areEqual('Approved', result.LoanStatus__c,  'Status should match');
         Assert.isNotNull(result.CreatedDate, 'CreatedDate should be populated');
+    }
+
+    @IsTest
+    static void getRecentLoanRequests_returnsUpToFiveRecords() {
+        List<LoanRequest__c> toInsert = new List<LoanRequest__c>();
+        for (Integer i = 0; i < 7; i++) {
+            toInsert.add(new LoanRequest__c(
+                LoanAmount__c = 10000 * (i + 1),
+                LoanStatus__c = 'Draft'
+            ));
+        }
+        insert toInsert;
+
+        Test.startTest();
+        List<LoanRequest__c> results = LoanRequestFormController.getRecentLoanRequests();
+        Test.stopTest();
+
+        Assert.isTrue(results.size() <= 5, 'Should return at most 5 records');
+        Assert.isTrue(results.size() > 0,  'Should return at least one record');
     }
 }
