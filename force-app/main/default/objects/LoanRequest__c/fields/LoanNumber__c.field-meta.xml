@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LoanNumber__c</fullName>
+    <displayFormat>LOAN-{00000}</displayFormat>
+    <label>Loan Number</label>
+    <startingNumber>1</startingNumber>
+    <type>AutoNumber</type>
+</CustomField>

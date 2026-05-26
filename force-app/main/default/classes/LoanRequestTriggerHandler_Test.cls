@@ -72,9 +72,11 @@ public class LoanRequestTriggerHandler_Test {
         Test.startTest();
         lr.LoanStatus__c = LoanRequestConstants.STATUS_APPROVED;
         update lr;
+        // Capture inside the test block — after stopTest the outer limit context is restored
+        Integer emailInvocations = Limits.getEmailInvocations();
         Test.stopTest();
 
-        System.assertEquals(1, Limits.getEmailInvocations(), 'Exactly one email invocation expected');
+        System.assertEquals(1, emailInvocations, 'Exactly one email invocation expected');
     }
 
     // Status change → AuditLog__c created with correct field values

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>LoanApproval__c</fullName>
+    <label>Loan Approval</label>
+    <nameField>
+        <displayFormat>LAPPR-{0000}</displayFormat>
+        <label>Loan Approval Name</label>
+        <type>AutoNumber</type>
+    </nameField>
+    <pluralLabel>Loan Approvals</pluralLabel>
+    <sharingModel>ControlledByParent</sharingModel>
+    <deploymentStatus>Deployed</deploymentStatus>
+</CustomObject>
