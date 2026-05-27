@@ -23,7 +23,8 @@
       "PowerShell(sf apex run --target-org my-scratch-org-2 --file \"c:\\\\Users\\\\sapir\\\\Desktop\\\\bank-leumi-sapir\\\\scripts\\\\assign_layouts.apex\" 2>&1)",
       "Bash(mv \"c:/Users/sapir/Desktop/bank-leumi-sapir/force-app/main/default/customNotificationTypes\" \"c:/Users/sapir/Desktop/bank-leumi-sapir/customNotificationTypes-pending\")",
       "Bash(git remote *)",
-      "PowerShell(Rename-Item \"c:\\\\Users\\\\sapir\\\\Desktop\\\\bank-leumi-sapir\\\\force-app\\\\main\\\\default\\\\messageChannels\\\\LoanRequestChannel__c.messageChannel-meta.xml\" \"LoanRequestChannel.messageChannel-meta.xml\")"
+      "PowerShell(Rename-Item \"c:\\\\Users\\\\sapir\\\\Desktop\\\\bank-leumi-sapir\\\\force-app\\\\main\\\\default\\\\messageChannels\\\\LoanRequestChannel__c.messageChannel-meta.xml\" \"LoanRequestChannel.messageChannel-meta.xml\")",
+      "Bash(sf data *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\sapir\\Desktop\\bank-leumi-sapir\\force-app\\main\\default\\customNotificationTypes",
