@@ -8,13 +8,8 @@
         <valueSetDefinition>
             <sorted>false</sorted>
             <value>
-                <fullName>Active</fullName>
-                <default>true</default>
-                <label>Active</label>
-            </value>
-            <value>
                 <fullName>Inactive</fullName>
-                <default>false</default>
+                <default>true</default>
                 <label>Inactive</label>
             </value>
             <value>
