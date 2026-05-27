@@ -110,13 +110,8 @@ public with sharing class LoanRequestTriggerHandler implements ITriggerHandler {
     }
 
     private static void sendManagerNotifications(List<LoanRequest__c> newList) {
-        List<CustomNotificationType> notifTypes = [
-            SELECT Id FROM CustomNotificationType
-            WHERE DeveloperName = :LoanRequestConstants.NOTIF_TYPE_API_NAME
-            LIMIT 1
-        ];
-        if (notifTypes.isEmpty()) return;
-        String notifTypeId = notifTypes[0].Id;
+        String notifTypeId = NotificationTypeSelector.getIdByDeveloperName(LoanRequestConstants.NOTIF_TYPE_API_NAME);
+        if (notifTypeId == null) return;
 
         for (LoanRequest__c lr : newList) {
             if (lr.LoanAmount__c == null
@@ -129,8 +124,11 @@ public with sharing class LoanRequestTriggerHandler implements ITriggerHandler {
                 Messaging.CustomNotification notif = new Messaging.CustomNotification();
                 notif.setNotificationTypeId(notifTypeId);
                 notif.setTargetId(lr.Id);
-                notif.setTitle('High-Value Loan Request Requires Approval');
-                notif.setBody('Loan amount: ' + lr.LoanAmount__c.format() + ' — please review and action.');
+                notif.setTitle(LoanRequestConstants.NOTIF_TITLE);
+                notif.setBody(String.format(
+                    LoanRequestConstants.NOTIF_BODY_TEMPLATE,
+                    new List<String>{ lr.LoanAmount__c.format() }
+                ));
                 notif.send(new Set<String>{ lr.AssignedManager__c });
             } catch (Exception e) {
                 System.debug(LoggingLevel.ERROR, 'CustomNotification failed: ' + e.getMessage());

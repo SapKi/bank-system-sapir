@@ -56,9 +56,9 @@ public class LoanApprovalQueueable implements Queueable, Database.AllowsCallouts
         req.setMethod('POST');
         req.setHeader('Content-Type', 'application/json');
         req.setBody(JSON.serialize(new Map<String, Object>{
-            'loanRequestId'  => approval.LoanRequest__c,
-            'loanApprovalId' => approval.Id,
-            'attemptNumber'  => attemptNumber
+            LoanRequestConstants.INTEGRATION_FIELD_LOAN_REQUEST_ID  => approval.LoanRequest__c,
+            LoanRequestConstants.INTEGRATION_FIELD_LOAN_APPROVAL_ID => approval.Id,
+            LoanRequestConstants.INTEGRATION_FIELD_ATTEMPT_NUMBER   => attemptNumber
         }));
         req.setTimeout(30000);
         return req;
@@ -68,8 +68,8 @@ public class LoanApprovalQueueable implements Queueable, Database.AllowsCallouts
         approval.ReceivedResponse__c = Datetime.now();
         try {
             Map<String, Object> body = (Map<String, Object>) JSON.deserializeUntyped(res.getBody());
-            if (body.containsKey('referenceId')) {
-                approval.ExternalRefId__c = String.valueOf(body.get('referenceId'));
+            if (body.containsKey(LoanRequestConstants.INTEGRATION_FIELD_REFERENCE_ID)) {
+                approval.ExternalRefId__c = String.valueOf(body.get(LoanRequestConstants.INTEGRATION_FIELD_REFERENCE_ID));
             }
         } catch (Exception e) {
             // Response body parsing is best-effort — field stays null

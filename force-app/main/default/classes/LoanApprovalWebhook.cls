@@ -17,10 +17,10 @@ global without sharing class LoanApprovalWebhook {
 
         try {
             Map<String, Object> payload       = (Map<String, Object>) JSON.deserializeUntyped(requestBody);
-            String externalRefId   = String.valueOf(payload.get('referenceId'));
-            String approvalStatus  = String.valueOf(payload.get('status'));
-            String rejectionReason = payload.containsKey('rejectionReason')
-                ? String.valueOf(payload.get('rejectionReason')) : null;
+            String externalRefId   = String.valueOf(payload.get(LoanRequestConstants.INTEGRATION_FIELD_REFERENCE_ID));
+            String approvalStatus  = String.valueOf(payload.get(LoanRequestConstants.INTEGRATION_FIELD_STATUS));
+            String rejectionReason = payload.containsKey(LoanRequestConstants.INTEGRATION_FIELD_REJECTION_REASON)
+                ? String.valueOf(payload.get(LoanRequestConstants.INTEGRATION_FIELD_REJECTION_REASON)) : null;
 
             LoanApproval__c approval = LoanApprovalSelector.getByExternalRefId(externalRefId);
 

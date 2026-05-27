@@ -7,10 +7,9 @@ import {
     STATUS_BADGE_CLASSES,
     LOAN_REQUEST_OBJECT_API,
     CURRENCY_CODE,
-    DATE_LOCALE
+    DATE_LOCALE,
+    MAX_RECENT_REQUESTS
 } from 'c/loanRequestConstants';
-
-const MAX_DISPLAY = 5;
 
 export default class LoanRequestSummary extends LightningElement {
     @track loanRequests = [];
@@ -51,18 +50,16 @@ export default class LoanRequestSummary extends LightningElement {
 
     handleMessage(message) {
         // Optimistic prepend — show immediately from LMS payload
-        const optimistic = {
-            recordId:        message.recordId,
-            customerName:    message.customerName,
-            loanStatus:      message.loanStatus,
-            formattedAmount: this.formatAmount(message.loanAmount),
-            statusBadgeClass: STATUS_BADGE_CLASSES[message.loanStatus] ?? 'status-badge',
-            recordUrl:       `/lightning/r/${LOAN_REQUEST_OBJECT_API}/${message.recordId}/view`,
-            createdDate:     ''
-        };
-        this.loanRequests = [optimistic, ...this.loanRequests].slice(0, MAX_DISPLAY);
+        const optimistic = this.buildItem(
+            message.recordId,
+            message.customerName,
+            message.loanStatus,
+            this.formatAmount(message.loanAmount),
+            ''
+        );
+        this.loanRequests = [optimistic, ...this.loanRequests].slice(0, MAX_RECENT_REQUESTS);
 
-        // Then refresh that specific record with authoritative Salesforce data
+        // Then refresh with authoritative data from Salesforce
         getLoanRequest({ recordId: message.recordId })
             .then(record => {
                 this.loanRequests = this.loanRequests.map(req =>
@@ -78,23 +75,28 @@ export default class LoanRequestSummary extends LightningElement {
         const firstName = record.Customer__r?.FirstName__c ?? '';
         const lastName  = record.Customer__r?.LastName__c  ?? '';
         const name      = `${firstName} ${lastName}`.trim() || '—';
+        const date      = record.CreatedDate
+            ? new Date(record.CreatedDate).toLocaleString(DATE_LOCALE, {
+                  year:   'numeric',
+                  month:  'short',
+                  day:    'numeric',
+                  hour:   '2-digit',
+                  minute: '2-digit'
+              })
+            : '';
+        return this.buildItem(record.Id, name, record.LoanStatus__c, this.formatAmount(record.LoanAmount__c), date);
+    }
 
+    // Single source of truth for the shape of an item in the list.
+    buildItem(recordId, customerName, loanStatus, formattedAmount, formattedDate) {
         return {
-            recordId:        record.Id,
-            customerName:    name,
-            loanStatus:      record.LoanStatus__c,
-            formattedAmount: this.formatAmount(record.LoanAmount__c),
-            statusBadgeClass: STATUS_BADGE_CLASSES[record.LoanStatus__c] ?? 'status-badge',
-            recordUrl:       `/lightning/r/${LOAN_REQUEST_OBJECT_API}/${record.Id}/view`,
-            createdDate:     record.CreatedDate
-                ? new Date(record.CreatedDate).toLocaleString(DATE_LOCALE, {
-                      year:   'numeric',
-                      month:  'short',
-                      day:    'numeric',
-                      hour:   '2-digit',
-                      minute: '2-digit'
-                  })
-                : ''
+            recordId,
+            customerName,
+            loanStatus,
+            formattedAmount,
+            statusBadgeClass: STATUS_BADGE_CLASSES[loanStatus] ?? 'status-badge',
+            recordUrl:        `/lightning/r/${LOAN_REQUEST_OBJECT_API}/${recordId}/view`,
+            createdDate:      formattedDate
         };
     }
 

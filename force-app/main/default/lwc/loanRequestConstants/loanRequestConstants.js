@@ -21,5 +21,6 @@ export const STATUS_BADGE_CLASSES = {
 
 export const LOAN_REQUEST_OBJECT_API = 'LoanRequest__c';
 
-export const CURRENCY_CODE = 'USD';
-export const DATE_LOCALE   = 'en-US';
+export const CURRENCY_CODE        = 'USD';
+export const DATE_LOCALE          = 'en-US';
+export const MAX_RECENT_REQUESTS  = 5;

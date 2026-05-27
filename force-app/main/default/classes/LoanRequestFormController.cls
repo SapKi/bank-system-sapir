@@ -6,12 +6,7 @@ public with sharing class LoanRequestFormController {
         Decimal loanAmount,
         String  loanStatus
     ) {
-        LoanRequest__c lr = new LoanRequest__c(
-            Customer__c   = customerId,
-            LoanAmount__c = loanAmount,
-            LoanStatus__c = loanStatus
-        );
-        insert lr;
+        LoanRequest__c lr = LoanRequestService.createLoanRequest(customerId, loanAmount, loanStatus);
         return LoanRequestSelector.getById(lr.Id);
     }
 
@@ -22,6 +17,6 @@ public with sharing class LoanRequestFormController {
 
     @AuraEnabled(cacheable=false)
     public static List<LoanRequest__c> getRecentLoanRequests() {
-        return LoanRequestSelector.getRecent(5);
+        return LoanRequestSelector.getRecent(LoanRequestConstants.MAX_RECENT_LOAN_REQUESTS);
     }
 }

@@ -58,7 +58,24 @@ public class LoanRequestConstants {
     public static final String ACTION_WEBHOOK_FAILED         = 'WebhookFailed';
 
     // ── Custom Notification ──────────────────────────────────────────────────────
-    public static final String NOTIF_TYPE_API_NAME = 'HighValueLoanAlert';
+    public static final String NOTIF_TYPE_API_NAME  = 'HighValueLoanAlert';
+    public static final String NOTIF_TITLE           = 'High-Value Loan Request Requires Approval';
+    // {0} = formatted loan amount
+    public static final String NOTIF_BODY_TEMPLATE   = 'Loan amount: {0} — please review and action.';
+
+    // ── Email Sender ─────────────────────────────────────────────────────────────
+    public static final String EMAIL_SENDER_DISPLAY_NAME = 'Bank System';
+
+    // ── Recent Requests ──────────────────────────────────────────────────────────
+    public static final Integer MAX_RECENT_LOAN_REQUESTS = 5;
+
+    // ── Integration — external JSON field names (API contract) ───────────────────
+    public static final String INTEGRATION_FIELD_REFERENCE_ID    = 'referenceId';
+    public static final String INTEGRATION_FIELD_STATUS          = 'status';
+    public static final String INTEGRATION_FIELD_REJECTION_REASON = 'rejectionReason';
+    public static final String INTEGRATION_FIELD_LOAN_REQUEST_ID  = 'loanRequestId';
+    public static final String INTEGRATION_FIELD_LOAN_APPROVAL_ID = 'loanApprovalId';
+    public static final String INTEGRATION_FIELD_ATTEMPT_NUMBER   = 'attemptNumber';
 
     // ── Audit Log — Severities ───────────────────────────────────────────────────
     public static final String SEVERITY_INFO  = 'INFO';

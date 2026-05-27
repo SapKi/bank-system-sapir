@@ -12,15 +12,12 @@ public without sharing class EmailService {
             String.format(LoanRequestConstants.EMAIL_BODY_TEMPLATE, new List<String>{ customerName, amount })
         );
 
-        List<OrgWideEmailAddress> owas = [
-            SELECT Id FROM OrgWideEmailAddress
-            LIMIT 1
-        ];
-        if (!owas.isEmpty()) {
-            mail.setOrgWideEmailAddressId(owas[0].Id);
+        String owaId = EmailSelector.getOrgWideEmailAddressId();
+        if (owaId != null) {
+            mail.setOrgWideEmailAddressId(owaId);
         } else {
             mail.setReplyTo(LoanRequestConstants.EMAIL_REPLY_TO);
-            mail.setSenderDisplayName('Bank System');
+            mail.setSenderDisplayName(LoanRequestConstants.EMAIL_SENDER_DISPLAY_NAME);
         }
 
         return mail;
