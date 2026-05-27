@@ -4,7 +4,7 @@
   חלק ה': בדיקות יחידה וייעול ביצועים
 ================================================================================
 
-מוגש על ידי: Sapir Kikoz
+מוגש על ידי: Sapir Weizman
 
 ================================================================================
                          מפת הנושאים במסמך
@@ -15,6 +15,7 @@
   ┌─────────────────────────────────────────────────┬──────────────────────────┐
   │ נושא                                            │ מיקום במסמך              │
   ├─────────────────────────────────────────────────┼──────────────────────────┤
+  │ הדגמה — פרטי Org, יוזרים, הוראות ידניות        │ חלק א' — דמו             │
   │ קוד Apex מלא (טריגר + כל השכבות)               │ חלק ב', סעיפים 2–14      │
   │ טיפול בעדכוני מסה (Bulkification)              │ חלק ב', סעיף 15א         │
   │ מניעת רקורסיה (Recursion Guard)                │ חלק ב', סעיף 15ב         │
@@ -23,12 +24,153 @@
   │ כתיבה ל-AuditLog (buildLog / collect / insert) │ חלק ב', סעיף 11 + 15ג    │
   │ יעילות בסביבת ייצור (SOQL, DML, Queueable)    │ חלק ב', סעיף 16          │
   │ Batch Apex — עיבוד נפח גדול                    │ חלק ה', סעיף 4א          │
-  │ הגבלות SOQL — טבלה + דוגמה ✅/❌               │ חלק ה', סעיף 4ב          │
+  │ הגבלות SOQL — טבלה + דוגמה                     │ חלק ה', סעיף 4ב          │
   │ Indexing — שדות מומלצים לאינדקס               │ חלק ה', סעיף 4ג          │
   │ Unit Tests — Trigger Handler (12 בדיקות)       │ חלק ה', סעיף 1           │
   │ Unit Tests — Controller (6 בדיקות)             │ חלק ה', סעיף 2           │
   │ כיסוי קוד > 90% — 30/30 בדיקות עוברות         │ חלק ה', סעיף 3           │
   └─────────────────────────────────────────────────┴──────────────────────────┘
+
+================================================================================
+              חלק א' — הדגמה: הוראות ידניות ותצורת Org
+================================================================================
+
+------------------------------------------------------------------------
+1. פרטי Org
+------------------------------------------------------------------------
+
+  Org URL:           https://power-velocity-9198-dev-ed.scratch.my.salesforce.com
+  Scratch Org Alias: my-scratch-org-2
+
+------------------------------------------------------------------------
+2. יוזרים לדמו — ולמה שני יוזרים
+------------------------------------------------------------------------
+
+  ┌──────────────────┬──────────────────┬──────────────────────────────────────────┬─────────────────┐
+  │ תפקיד            │ שם               │ Username                                 │ Password        │
+  ├──────────────────┼──────────────────┼──────────────────────────────────────────┼─────────────────┤
+  │ System Admin     │ User User        │ test-9l5mddq5jg5q@example.com            │ 7rb]ikecrzOvt   │
+  │ Bank Clerk       │ Yael Clerk       │ yael.clerk.1779796569252@banksystem-demo.com │ BankSystem@2025 │
+  │ Branch Manager   │ David Manager    │ david.manager.1779794406447@banksystem-demo.com │ BankSystem@2025  │
+  └──────────────────┴──────────────────┴──────────────────────────────────────────┴─────────────────┘
+
+  טיפ: פתחי חלון רגיל עם Yael וחלון גלישה פרטי (Incognito) עם David — לשתי
+  הסשנים בו-זמנית.
+
+  למה שני יוזרים נפרדים?
+  -----------------------
+  המערכת מדגימה תהליך עם שני תפקידים שונים בנסיבות אמיתיות:
+    • Yael Clerk — פקידת סניף שיוצרת בקשות הלוואה בשם לקוח.
+    • David Manager — מנהל שמקבל את ההתראה (Task + Custom Notification)
+      ומאשר או דוחה את הבקשה.
+  הפרדת התפקידים מוכיחה שהמנגנון עובד cross-user: Task נוצר על שם David,
+  ורק הוא רואה את ההתראה — לא Yael.
+
+  Permission Set שהוגדר:
+    • BankSystemStaff — מוקצה לשני היוזרים.
+    • מעניק גישה ל-Customer__c, LoanRequest__c, AuditLog__c (view + edit).
+    • viewAllRecords = true לצורכי דמו חלק (בפרודקשן — Sharing Rules ו-Role
+      Hierarchy מגבילים כל פקיד לרשומות שלו בלבד).
+
+------------------------------------------------------------------------
+3. הדרכה מלאה — שלב אחר שלב
+------------------------------------------------------------------------
+
+  שלב 1 — הכנה
+    • היכנסי כ-Yael Clerk בחלון רגיל.
+    • היכנס כ-David Manager בחלון פרטי (Incognito).
+
+  שלב 2 — יצירת לקוח ובקשת הלוואה (כ-Yael)
+    1. App Launcher → Customers → New
+    2. מלאי: First Name, Last Name, Email (כתובת אמיתית — כדי לקבל את מייל
+       האישור בפועל)
+    3. Save
+    4. App Launcher → Loan Requests → New
+    5. בחרי את הלקוח שיצרת, הכניסי סכום מעל 250,000,
+       הגדירי את David Manager כ-Assigned Manager
+    6. Save
+
+  שלב 3 — המנהל מקבל את ההתראה (כ-David)
+    • App Launcher → Tasks
+    • Task חדש מופיע: "High-Value Loan Request — Manager Approval Required"
+        - Priority: High
+        - Due Date: 3 ימים מהיום
+        - Related To: בקשת ההלוואה של Yael
+    • בנוסף: פעמון ההתראה (Custom Notification) מציג הודעה עם סכום ההלוואה.
+
+  שלב 4 — אישור הבקשה ושליחת מייל (כ-David)
+    1. פתח את בקשת ההלוואה מתוך ה-Task
+    2. Edit → שנה Loan Status ל-Approved → Save
+    3. מייל אישור נשלח אוטומטית לכתובת האימייל של הלקוח
+    4. App Launcher → Audit Logs → רשומה חדשה מופיעה:
+         Action: StatusChanged | OldValue: Draft | NewValue: Approved
+
+  שלב 5 — בדיקת סטטוס הלקוח (כ-Yael)
+    • App Launcher → Customers → פתחי את הלקוח
+    • Status__c עודכן ל-"Active Customer" (על ידי ה-Flow אוטומטית)
+
+------------------------------------------------------------------------
+4. הסבר — מדוע לא תראו LoanApproval__c בדמו
+------------------------------------------------------------------------
+
+  LoanApproval__c אינו נוצר כאשר הסטטוס משתנה ל-Approved.
+  הוא נוצר רק כשהסטטוס משתנה ל-Submitted — המייצג שליחה למערכת ה-Core
+  Banking החיצונית לצורך אישור.
+
+  תהליך ייצור מלא:
+
+    Draft → Submitted  →  LoanApproval__c נוצר + HTTP POST למערכת חיצונית
+                       ↓
+               המערכת החיצונית מעבדת את הבקשה וקוראת ל-Webhook
+                       ↓
+               LoanApproval__c מתעדכן ל-Approved / Rejected
+                       ↓
+               LoanRequest__c מתעדכן ל-Approved → מייל אישור נשלח ללקוח
+
+  בדמו דילגנו ישירות ל-Approved מאחר ואין שרת חיצוני אמיתי.
+  בסביבת ייצור תראי גם רשומת LoanApproval__c עם ApprovalStatus = Approved
+  ו-ReceivedResponse__c מאוכלס.
+
+------------------------------------------------------------------------
+5. תצורה ידנית שבוצעה ב-Org — החלטות Session
+------------------------------------------------------------------------
+
+  א) Org-Wide Email Address
+     • נוספה כתובת שולח מאומתת:
+         Setup → Email → Organization-Wide Addresses
+         Address: sapirkikoz@gmail.com
+         (בפרודקשן — noreply@banksystem.co.il)
+     • EmailService.buildApprovalEmail() שואל את OrgWideEmailAddress
+       ומשתמש ב-setOrgWideEmailAddressId() — מייל מגיע מדומיין מהימן
+       ולא מכתובת הרנדומלית של ה-scratch org.
+
+  ב) Email Deliverability
+     • Setup → Email → Deliverability → Access to Send Email → All Email
+     • Scratch orgs מוגדרות כברירת מחדל ל-"System Email Only" — שמוריד
+       בשקט את כל קריאות Messaging.sendEmail(). שינוי זה הכרחי לדמו.
+
+  ג) Custom Notification למנהל
+     • נוצר סוג התראה בשם HighValueLoanAlert:
+         Setup → Custom Notifications → New
+         (לא ניתן לייצא מטאדאטה זה ב-CLI בגרסת API 62.0)
+     • LoanRequestTriggerHandler.sendManagerNotifications() שולח
+       Messaging.CustomNotification לכל מנהל מוקצה כאשר AlertSent__c
+       מועבר ל-true — ההתראה מופיעה בפעמון Salesforce של המנהל.
+     • בפרודקשן — ה-CustomNotificationType יוצא כמטאדאטה ומתוחזק ב-Git.
+
+  ד) AuditLog Severity — INFO vs WARN
+     • Severity__c נקבע לפי סכום ההלוואה:
+         LoanAmount > 250,000  →  WARN
+         LoanAmount ≤ 250,000  →  INFO
+     • בדמו כל ההלוואות הבדיקתיות עולות על 250,000, לכן כל רשומות
+       ה-AuditLog יופיעו עם Severity = WARN — זהו התנהגות מכוונת.
+
+  ה) Page Layout Assignments
+     • Layouts מותאמים אישית פוייסו לשלושת האובייקטים (Customer, LoanRequest,
+       AuditLog) אך Salesforce אינו מקצה אותם אוטומטית ל-profiles שאינם Admin.
+     • הפתרון: פריסת קבצי XML מינימליים של Profile המכילים בלוקי
+       layoutAssignments בלבד — Salesforce ממזג אותם לתוך הגדרות ה-profile
+       הקיימות ללא מחיקת הרשאות אחרות.
 
 ================================================================================
                               חלק ב' — Apex
