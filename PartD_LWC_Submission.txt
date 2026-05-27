@@ -1,0 +1,1101 @@
+================================================================================
+  מערכת CRM לניהול בקשות הלוואה — בנק לאומי
+  חלק ד': פיתוח LWC עם תקשורת בין רכיבים
+================================================================================
+
+מוגש על ידי: Sapir Kikoz
+תאריך: מאי 2026
+
+================================================================================
+                         מפת הנושאים במסמך
+================================================================================
+
+  ┌──────────────────────────────────────────────────┬─────────────────────────┐
+  │ נושא                                             │ מיקום במסמך             │
+  ├──────────────────────────────────────────────────┼─────────────────────────┤
+  │ ארכיטקטורה — שני רכיבים ללא parent משותף        │ סעיף 1                  │
+  │ תקשורת בין רכיבים — למה LMS ולא CustomEvent     │ סעיף 2                  │
+  │ LoanRequestChannel — הגדרת ערוץ ה-LMS           │ סעיף 3                  │
+  │ loanRequestConstants — מודול קבועים משותף        │ סעיף 4                  │
+  │ Component A — loanRequestForm (HTML+JS+CSS)      │ סעיף 5                  │
+  │ Component B — loanRequestSummary (HTML+JS+CSS)   │ סעיף 6                  │
+  │ Apex Controller — LoanRequestFormController      │ סעיף 7                  │
+  │ זרימת הנתונים המלאה (page load + form submit)   │ סעיף 8                  │
+  │ Optimistic UI Pattern                            │ סעיף 9                  │
+  │ אתגרים ופתרונות                                 │ סעיף 10                 │
+  │ עץ ארכיטקטורה + Layer Responsibilities מה-README│ סעיף 11.1–11.2          │
+  │ with sharing / without sharing עבור LWC stack   │ סעיף 11.3               │
+  │ Selector Layer + Service Layer                   │ סעיף 11.4–11.5          │
+  │ Why LMS + Data Flow + Design Decisions מה-README │ סעיף 11.6–11.9          │
+  └──────────────────────────────────────────────────┴─────────────────────────┘
+
+================================================================================
+               סעיף 1 — ארכיטקטורה: שני רכיבים ללא Parent משותף
+================================================================================
+
+הדרישה: שני רכיבים (Component A ו-Component B) שמתקשרים ביניהם
+ללא parent משותף — כלומר, כל אחד ממוקם באופן עצמאי בדף Salesforce.
+
+  ┌───────────────────────┐          ┌────────────────────────┐
+  │  Component A          │          │  Component B           │
+  │  loanRequestForm      │          │  loanRequestSummary    │
+  │                       │          │                        │
+  │  • טופס הזנה          │          │  • רשימת בקשות אחרונות │
+  │  • lightning-record-  │          │  • מתעדכן אוטומטית     │
+  │    picker (לקוח)      │          │    עם כל שמירה חדשה    │
+  │  • Loan Amount        │          │  • spinner בטעינה      │
+  │  • Loan Status        │          │  • badge לפי סטטוס     │
+  │  • כפתורי Save/Reset  │          │  • קישור לרשומה        │
+  │  • spinner בשמירה     │          │                        │
+  └──────────┬────────────┘          └──────────┬─────────────┘
+             │  publish()                        │  subscribe()
+             │                                   │
+             └──────────────┬────────────────────┘
+                            │
+                  ┌─────────▼──────────┐
+                  │  LoanRequestChannel │  ← Lightning Message Service
+                  │  (APPLICATION_SCOPE)│     ערוץ הודעות Salesforce
+                  └─────────────────────┘
+
+================================================================================
+           סעיף 2 — תקשורת בין רכיבים: למה LMS ולא CustomEvent
+================================================================================
+
+ב-Salesforce LWC קיימות שלוש אפשרויות לתקשורת בין רכיבים:
+
+  ┌──────────────────────────┬──────────────────────┬───────────────────────────┐
+  │ מנגנון                   │ דורש Parent משותף?   │ עובד בין אזורי דף שונים?  │
+  ├──────────────────────────┼──────────────────────┼───────────────────────────┤
+  │ CustomEvent + listener   │ כן                   │ לא                        │
+  │ @api property binding    │ כן (ישיר)            │ לא                        │
+  │ Lightning Message Service│ לא                   │ כן                        │
+  └──────────────────────────┴──────────────────────┴───────────────────────────┘
+
+  • CustomEvent "מבעבע" (bubbles) דרך עץ ה-DOM בלבד.
+    אם Component A ו-B אינם תחת אותו parent, האירוע לא יגיע ליעדו.
+
+  • @api property binding דורש שה-parent יעביר את הנתונים ישירות
+    ל-child — לא רלוונטי כאשר אין parent משותף.
+
+  • Lightning Message Service (LMS) עובד ברמת ה-Application —
+    כל רכיב שמנוי לערוץ מקבל את ההודעה, ללא קשר למיקומו ב-DOM.
+    זהו המנגנון היחיד שמאפשר תקשורת בין רכיבים ללא parent משותף.
+
+================================================================================
+              סעיף 3 — LoanRequestChannel (ערוץ ה-LMS)
+================================================================================
+
+קובץ: force-app/main/default/messageChannels/LoanRequestChannel.messageChannel-meta.xml
+
+------------------------------------------------------------------------
+LoanRequestChannel.messageChannel-meta.xml
+------------------------------------------------------------------------
+
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningMessageChannel xmlns="http://soap.sforce.com/2006/04/metadata">
+    <masterLabel>Loan Request Channel</masterLabel>
+    <isExposed>true</isExposed>
+    <description>Broadcasts a saved LoanRequest record from the form (Component A)
+    to the summary (Component B) without requiring a shared parent component.</description>
+    <lightningMessageFields>
+        <fieldName>recordId</fieldName>
+        <description>Salesforce Id of the newly created LoanRequest__c record</description>
+    </lightningMessageFields>
+    <lightningMessageFields>
+        <fieldName>customerName</fieldName>
+        <description>Customer name as entered in the form</description>
+    </lightningMessageFields>
+    <lightningMessageFields>
+        <fieldName>loanAmount</fieldName>
+        <description>Loan amount value</description>
+    </lightningMessageFields>
+    <lightningMessageFields>
+        <fieldName>loanStatus</fieldName>
+        <description>Selected loan status picklist value</description>
+    </lightningMessageFields>
+</LightningMessageChannel>
+
+הסבר:
+  • הערוץ מגדיר 4 שדות: recordId, customerName, loanAmount, loanStatus.
+  • isExposed: true — הערוץ זמין לכל קומפוננטה בארגון.
+  • Component A מפרסם (publish) לערוץ לאחר שמירה מוצלחת ב-Salesforce.
+  • Component B רשום (subscribe) לערוץ עם APPLICATION_SCOPE —
+    מקבל הודעות מכל מקום בדף, לא רק מאותו DOM subtree.
+
+================================================================================
+              סעיף 4 — loanRequestConstants (מודול קבועים משותף)
+================================================================================
+
+קובץ: force-app/main/default/lwc/loanRequestConstants/loanRequestConstants.js
+
+------------------------------------------------------------------------
+loanRequestConstants.js
+------------------------------------------------------------------------
+
+/** Shared constants for the loanRequestForm / loanRequestSummary LWC pair. */
+
+export const DEFAULT_LOAN_STATUS = 'Draft';
+
+export const LOAN_STATUS_OPTIONS = [
+    { label: 'Draft',     value: 'Draft'     },
+    { label: 'In Review', value: 'In Review' },
+    { label: 'Submitted', value: 'Submitted' },
+    { label: 'Approved',  value: 'Approved'  },
+    { label: 'Rejected',  value: 'Rejected'  }
+];
+
+// Maps each LoanStatus__c picklist value to its CSS badge class
+export const STATUS_BADGE_CLASSES = {
+    'Draft':     'status-badge status-draft',
+    'In Review': 'status-badge status-review',
+    'Submitted': 'status-badge status-submitted',
+    'Approved':  'status-badge status-approved',
+    'Rejected':  'status-badge status-rejected'
+};
+
+export const LOAN_REQUEST_OBJECT_API = 'LoanRequest__c';
+
+export const CURRENCY_CODE        = 'USD';
+export const DATE_LOCALE          = 'en-US';
+export const MAX_RECENT_REQUESTS  = 5;
+
+הסבר:
+  • מודול JavaScript עם isExposed: false — לשימוש פנימי בלבד.
+  • שני הרכיבים (A ו-B) מייבאים ממנו — אין כפילות של ערכים.
+  • כל שינוי (למשל, הגדלת מגבלת הרשימה ל-10) מתבצע במקום אחד בלבד.
+  • STATUS_BADGE_CLASSES: map מ-picklist value לשם class CSS,
+    מאפשר ל-Component B להציג badge צבעוני בהתאם לסטטוס.
+
+================================================================================
+     סעיף 5 — Component A: loanRequestForm (טופס הלוואה)
+================================================================================
+
+------------------------------------------------------------------------
+5.1 loanRequestForm.html — תבנית
+------------------------------------------------------------------------
+
+<template>
+    <lightning-card title="New Loan Request" icon-name="standard:opportunity">
+        <div class="slds-p-around_medium slds-is-relative">
+
+            <!-- Spinner — מוצג בזמן שמירה -->
+            <template lwc:if={isLoading}>
+                <lightning-spinner
+                    alternative-text="Saving loan request..."
+                    size="medium"
+                    variant="brand">
+                </lightning-spinner>
+            </template>
+
+            <div class="slds-form slds-form_stacked">
+
+                <!-- שדה 1: בחירת לקוח -->
+                <div class="field-row">
+                    <lightning-record-picker
+                        label="Customer"
+                        placeholder="Search by first or last name..."
+                        object-api-name="Customer__c"
+                        value={customerId}
+                        display-info={displayInfo}
+                        matching-info={matchingInfo}
+                        onchange={handleCustomerChange}
+                        required>
+                    </lightning-record-picker>
+                </div>
+
+                <!-- שדה 2: סכום ההלוואה -->
+                <div class="field-row">
+                    <lightning-input
+                        type="number"
+                        label="Loan Amount"
+                        placeholder="e.g. 150000"
+                        value={loanAmount}
+                        data-id="loanAmount"
+                        onchange={handleInputChange}
+                        min="1"
+                        step="any"
+                        required>
+                    </lightning-input>
+                </div>
+
+                <!-- שדה 3: סטטוס ההלוואה -->
+                <div class="field-row">
+                    <lightning-combobox
+                        label="Loan Status"
+                        value={loanStatus}
+                        options={statusOptions}
+                        data-id="loanStatus"
+                        onchange={handleInputChange}
+                        required>
+                    </lightning-combobox>
+                </div>
+            </div>
+
+            <!-- כפתורי פעולה -->
+            <div class="form-actions slds-m-top_medium">
+                <lightning-button
+                    label="Reset"
+                    variant="neutral"
+                    onclick={handleReset}
+                    disabled={isLoading}>
+                </lightning-button>
+                <lightning-button
+                    label="Save"
+                    variant="brand"
+                    onclick={handleSave}
+                    disabled={isLoading}>
+                </lightning-button>
+            </div>
+
+        </div>
+    </lightning-card>
+</template>
+
+------------------------------------------------------------------------
+5.2 loanRequestForm.js — לוגיקה
+------------------------------------------------------------------------
+
+import { LightningElement, track, wire } from 'lwc';
+import { publish, MessageContext } from 'lightning/messageService';
+import { ShowToastEvent } from 'lightning/platformShowToastEvent';
+import { getRecord, getFieldValue } from 'lightning/uiRecordApi';
+import FIRST_NAME from '@salesforce/schema/Customer__c.FirstName__c';
+import LAST_NAME  from '@salesforce/schema/Customer__c.LastName__c';
+import LOAN_REQUEST_CHANNEL from '@salesforce/messageChannel/LoanRequestChannel__c';
+import saveLoanRequest from '@salesforce/apex/LoanRequestFormController.saveLoanRequest';
+import { LOAN_STATUS_OPTIONS, DEFAULT_LOAN_STATUS } from 'c/loanRequestConstants';
+
+export default class LoanRequestForm extends LightningElement {
+    @track customerId = null;
+    @track loanAmount = null;
+    @track loanStatus = DEFAULT_LOAN_STATUS;
+    @track isLoading  = false;
+
+    @wire(MessageContext)
+    messageContext;
+
+    // שולף FirstName__c / LastName__c בזמן אמת כאשר customerId משתנה
+    @wire(getRecord, { recordId: '$customerId', fields: [FIRST_NAME, LAST_NAME] })
+    customerRecord;
+
+    get customerName() {
+        if (!this.customerRecord?.data) return '';
+        const first = getFieldValue(this.customerRecord.data, FIRST_NAME) ?? '';
+        const last  = getFieldValue(this.customerRecord.data, LAST_NAME)  ?? '';
+        return `${first} ${last}`.trim();
+    }
+
+    // מציג FirstName__c + LastName__c ב-picker במקום שדה ה-Name האוטומטי (CUST-0001)
+    get displayInfo() {
+        return {
+            primaryField:     'FirstName__c',
+            additionalFields: ['LastName__c']
+        };
+    }
+
+    // מתאים את חיפוש ה-picker ל-FirstName__c + LastName__c
+    get matchingInfo() {
+        return {
+            primaryField:     { fieldPath: 'FirstName__c' },
+            additionalFields: [{ fieldPath: 'LastName__c' }]
+        };
+    }
+
+    get statusOptions() {
+        return LOAN_STATUS_OPTIONS;
+    }
+
+    handleCustomerChange(event) {
+        this.customerId = event.detail.recordId ?? null;
+    }
+
+    // handler כללי לשדות עם data-id — מעדכן this[field] ללא handler נפרד לכל שדה
+    handleInputChange(event) {
+        const field = event.target.dataset.id;
+        this[field] = event.detail.value;
+    }
+
+    handleSave() {
+        if (!this.isFormValid()) return;
+        this.isLoading = true;
+
+        saveLoanRequest({
+            customerId: this.customerId,
+            loanAmount: parseFloat(this.loanAmount),
+            loanStatus: this.loanStatus
+        })
+        .then(record => {
+            // פרסום ל-LMS — Component B מקבל את ההודעה
+            publish(this.messageContext, LOAN_REQUEST_CHANNEL, {
+                recordId:     record.Id,
+                customerName: this.customerName,
+                loanAmount:   parseFloat(this.loanAmount),
+                loanStatus:   this.loanStatus
+            });
+            this.showToast('Success', 'Loan request saved successfully.', 'success');
+            this.handleReset();
+        })
+        .catch(error => {
+            this.showToast(
+                'Error saving loan request',
+                error?.body?.message ?? 'An unexpected error occurred.',
+                'error'
+            );
+        })
+        .finally(() => {
+            this.isLoading = false;
+        });
+    }
+
+    handleReset() {
+        this.customerId = null;
+        this.loanAmount = null;
+        this.loanStatus = DEFAULT_LOAN_STATUS;
+        const picker = this.template.querySelector('lightning-record-picker');
+        if (picker) picker.clearSelection();
+        this.template
+            .querySelectorAll('lightning-input, lightning-combobox')
+            .forEach(el => el.setCustomValidity(''));
+    }
+
+    // מפעיל reportValidity() על כל השדות — מציג שגיאות תחת כל שדה לא תקין
+    isFormValid() {
+        const fields = [
+            ...this.template.querySelectorAll(
+                'lightning-record-picker, lightning-input, lightning-combobox'
+            )
+        ];
+        return fields.reduce((valid, f) => f.reportValidity() && valid, true);
+    }
+
+    showToast(title, message, variant) {
+        this.dispatchEvent(new ShowToastEvent({ title, message, variant }));
+    }
+}
+
+------------------------------------------------------------------------
+5.3 loanRequestForm.css — עיצוב
+------------------------------------------------------------------------
+
+:host {
+    display: block;
+}
+
+.field-row {
+    margin-bottom: 0.75rem;
+}
+
+.form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
+
+------------------------------------------------------------------------
+5.4 הסבר — נקודות מרכזיות ב-Component A
+------------------------------------------------------------------------
+
+א) lightning-record-picker:
+   במקום שדה טקסט חופשי לשם הלקוח, נעשה שימוש ב-lightning-record-picker
+   שמחפש רשומות Customer__c ישירות ב-Salesforce.
+   • display-info: מציג FirstName__c + LastName__c (ולא CUST-0001).
+   • matching-info: מתאים את החיפוש לשדות השם.
+   • התוצאה: ה-Component מקבל Customer Id מהימן ישירות,
+     ללא צורך ב-SOQL נוסף לחיפוש הלקוח לפי שם.
+
+ב) @wire(getRecord):
+   לאחר בחירת הלקוח, getRecord שולף את שם הלקוח אוטומטית
+   (FirstName__c + LastName__c) כדי לשלוח אותו ב-LMS payload ל-Component B.
+   הקריאה היא reactive — '$customerId' עם $ אומר שהיא תתבצע מחדש
+   בכל שינוי של customerId.
+
+ג) handleInputChange גנרי:
+   במקום handler נפרד לכל שדה, כל שדה מקבל data-id שתואם לשם המשתנה:
+     data-id="loanAmount" → this.loanAmount = event.detail.value
+     data-id="loanStatus" → this.loanStatus = event.detail.value
+   תוספת שדה חדש דורשת רק הוספת data-id תואם ב-HTML.
+
+ד) isFormValid() — ולידציה:
+   קריאת reportValidity() על כל השדות גורמת ל-Salesforce להציג
+   הודעות שגיאה מובנות ("Complete this field") תחת כל שדה חסר.
+
+ה) Spinner:
+   isLoading = true מיד עם לחיצה על Save.
+   isLoading = false ב-finally — מובטח גם אם הקריאה נכשלה.
+   disabled={isLoading} על שני הכפתורים מונע לחיצה כפולה.
+
+================================================================================
+     סעיף 6 — Component B: loanRequestSummary (רשימת בקשות)
+================================================================================
+
+------------------------------------------------------------------------
+6.1 loanRequestSummary.html — תבנית
+------------------------------------------------------------------------
+
+<template>
+    <lightning-card title="Recent Loan Requests" icon-name="standard:task2">
+        <div class="slds-p-around_medium slds-is-relative">
+
+            <!-- Spinner — בזמן טעינה ראשונית -->
+            <template lwc:if={isLoading}>
+                <lightning-spinner
+                    alternative-text="Loading recent requests..."
+                    size="medium"
+                    variant="brand">
+                </lightning-spinner>
+            </template>
+
+            <!-- רשימת הבקשות -->
+            <template lwc:if={hasRequests}>
+                <ul class="request-list">
+                    <template for:each={loanRequests} for:item="req">
+                        <li key={req.recordId} class="request-item">
+                            <div class="slds-grid slds-grid_vertical-align-center slds-gutters_small">
+
+                                <!-- שמאל: שם לקוח + תאריך -->
+                                <div class="slds-col slds-has-flexi-truncate">
+                                    <p class="slds-text-heading_small slds-truncate">
+                                        {req.customerName}
+                                    </p>
+                                    <p class="slds-text-body_small slds-text-color_weak slds-truncate">
+                                        {req.createdDate}
+                                    </p>
+                                </div>
+
+                                <!-- ימין: סכום + badge סטטוס + קישור לרשומה -->
+                                <div class="slds-col slds-shrink slds-text-align_right">
+                                    <p class="slds-text-heading_small amount">{req.formattedAmount}</p>
+                                    <div class="slds-m-top_xx-small">
+                                        <span class={req.statusBadgeClass}>{req.loanStatus}</span>
+                                        <a href={req.recordUrl}
+                                           target="_blank"
+                                           title="Open record"
+                                           class="slds-m-left_x-small record-link">
+                                            <lightning-icon
+                                                icon-name="utility:new_window"
+                                                size="xx-small"
+                                                alternative-text="Open">
+                                            </lightning-icon>
+                                        </a>
+                                    </div>
+                                </div>
+
+                            </div>
+                        </li>
+                    </template>
+                </ul>
+            </template>
+
+            <!-- Empty state — כשאין בקשות -->
+            <template lwc:if={showEmptyState}>
+                <div class="empty-state">
+                    <lightning-icon icon-name="utility:form" size="large" class="empty-icon">
+                    </lightning-icon>
+                    <p class="slds-text-heading_small slds-text-color_weak slds-m-top_small">
+                        No loan requests yet
+                    </p>
+                    <p class="slds-text-body_small slds-text-color_weak slds-m-top_xx-small">
+                        Submit a loan request using the form to see it here.
+                    </p>
+                </div>
+            </template>
+
+        </div>
+    </lightning-card>
+</template>
+
+------------------------------------------------------------------------
+6.2 loanRequestSummary.js — לוגיקה
+------------------------------------------------------------------------
+
+import { LightningElement, track, wire } from 'lwc';
+import { subscribe, unsubscribe, MessageContext, APPLICATION_SCOPE } from 'lightning/messageService';
+import LOAN_REQUEST_CHANNEL from '@salesforce/messageChannel/LoanRequestChannel__c';
+import getRecentLoanRequests from '@salesforce/apex/LoanRequestFormController.getRecentLoanRequests';
+import getLoanRequest        from '@salesforce/apex/LoanRequestFormController.getLoanRequest';
+import {
+    STATUS_BADGE_CLASSES,
+    LOAN_REQUEST_OBJECT_API,
+    CURRENCY_CODE,
+    DATE_LOCALE,
+    MAX_RECENT_REQUESTS
+} from 'c/loanRequestConstants';
+
+export default class LoanRequestSummary extends LightningElement {
+    @track loanRequests = [];
+    @track isLoading    = true;
+    _subscription       = null;
+
+    @wire(MessageContext)
+    messageContext;
+
+    connectedCallback() {
+        // רישום לערוץ LMS עם APPLICATION_SCOPE
+        this._subscription = subscribe(
+            this.messageContext,
+            LOAN_REQUEST_CHANNEL,
+            (message) => this.handleMessage(message),
+            { scope: APPLICATION_SCOPE }
+        );
+        this.loadRecentRequests();
+    }
+
+    disconnectedCallback() {
+        // ביטול רישום למניעת memory leak
+        unsubscribe(this._subscription);
+        this._subscription = null;
+    }
+
+    // טעינה ראשונית של 5 הבקשות האחרונות מ-Salesforce
+    loadRecentRequests() {
+        this.isLoading = true;
+        getRecentLoanRequests()
+            .then(records => {
+                this.loanRequests = records.map(r => this.mapRecord(r));
+            })
+            .catch(error => {
+                console.error('LoanRequestSummary – load failed:', error);
+            })
+            .finally(() => {
+                this.isLoading = false;
+            });
+    }
+
+    handleMessage(message) {
+        // שלב 1: Optimistic UI — הצגה מיידית מתוך payload ה-LMS
+        const optimistic = this.buildItem(
+            message.recordId,
+            message.customerName,
+            message.loanStatus,
+            this.formatAmount(message.loanAmount),
+            ''
+        );
+        this.loanRequests = [optimistic, ...this.loanRequests].slice(0, MAX_RECENT_REQUESTS);
+
+        // שלב 2: רענון עם נתוני Salesforce סמכותיים (CreatedDate, Customer__r)
+        getLoanRequest({ recordId: message.recordId })
+            .then(record => {
+                this.loanRequests = this.loanRequests.map(req =>
+                    req.recordId === record.Id ? this.mapRecord(record) : req
+                );
+            })
+            .catch(error => {
+                console.error('LoanRequestSummary – record refresh failed:', error);
+            });
+    }
+
+    // ממיר רשומת Salesforce לאובייקט תצוגה עם כל השדות הנדרשים
+    mapRecord(record) {
+        const firstName = record.Customer__r?.FirstName__c ?? '';
+        const lastName  = record.Customer__r?.LastName__c  ?? '';
+        const name      = `${firstName} ${lastName}`.trim() || '—';
+        const date      = record.CreatedDate
+            ? new Date(record.CreatedDate).toLocaleString(DATE_LOCALE, {
+                  year:   'numeric',
+                  month:  'short',
+                  day:    'numeric',
+                  hour:   '2-digit',
+                  minute: '2-digit'
+              })
+            : '';
+        return this.buildItem(
+            record.Id, name, record.LoanStatus__c,
+            this.formatAmount(record.LoanAmount__c), date
+        );
+    }
+
+    // מקור יחיד לצורת אובייקט הפריט ברשימה
+    buildItem(recordId, customerName, loanStatus, formattedAmount, formattedDate) {
+        return {
+            recordId,
+            customerName,
+            loanStatus,
+            formattedAmount,
+            statusBadgeClass: STATUS_BADGE_CLASSES[loanStatus] ?? 'status-badge',
+            recordUrl:        `/lightning/r/${LOAN_REQUEST_OBJECT_API}/${recordId}/view`,
+            createdDate:      formattedDate
+        };
+    }
+
+    formatAmount(amount) {
+        if (amount == null) return '—';
+        return new Intl.NumberFormat(DATE_LOCALE, {
+            style:                 'currency',
+            currency:              CURRENCY_CODE,
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 2
+        }).format(amount);
+    }
+
+    get hasRequests()   { return this.loanRequests.length > 0; }
+    get showEmptyState(){ return !this.isLoading && this.loanRequests.length === 0; }
+}
+
+------------------------------------------------------------------------
+6.3 loanRequestSummary.css — עיצוב
+------------------------------------------------------------------------
+
+:host { display: block; }
+
+.request-list  { list-style: none; margin: 0; padding: 0; }
+.request-item  { padding: 0.6rem 0; border-bottom: 1px solid #e5e5e5; }
+.request-item:last-child { border-bottom: none; }
+.amount        { font-weight: 600; }
+.record-link   { color: #0070d2; vertical-align: middle; }
+
+/* Status badges — צבע ייחודי לכל סטטוס */
+.status-badge {
+    display: inline-block;
+    padding: 0.15rem 0.75rem;
+    border-radius: 1rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    vertical-align: middle;
+}
+
+.status-draft     { background: #f4f6f9; color: #54698d; }  /* אפור */
+.status-review    { background: #fef3e2; color: #b67e11; }  /* כתום */
+.status-submitted { background: #e9f0ff; color: #1a56c4; }  /* כחול */
+.status-approved  { background: #e3f5e1; color: #2e844a; }  /* ירוק */
+.status-rejected  { background: #fdecea; color: #b51b12; }  /* אדום */
+
+/* Empty state */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 180px;
+    text-align: center;
+}
+.empty-icon { --lwc-colorTextIconDefault: #c9c9c9; }
+
+------------------------------------------------------------------------
+6.4 הסבר — נקודות מרכזיות ב-Component B
+------------------------------------------------------------------------
+
+א) APPLICATION_SCOPE:
+   ברירת המחדל של subscribe היא לקבל הודעות מאותו DOM subtree בלבד.
+   הוספת { scope: APPLICATION_SCOPE } מאפשרת לקבל הודעות מכל מקום
+   בדף — הכרחי כאשר Component A ממוקם בכרטיס נפרד.
+
+ב) connectedCallback / disconnectedCallback:
+   הרישום (subscribe) מתבצע ב-connectedCallback — ברגע שהרכיב
+   מורכב ב-DOM. ביטול הרישום (unsubscribe) מתבצע ב-disconnectedCallback —
+   כאשר הרכיב מוסר מה-DOM. זה מונע memory leak מצטבר.
+
+ג) buildItem() — Single Source of Truth:
+   הפונקציה buildItem() היא המקור היחיד לצורת אובייקט רשימה.
+   גם mapRecord() (נתוני Salesforce) וגם handleMessage() (Optimistic)
+   קוראות לה — אין כפילות של הגדרת הצורה.
+
+ד) Optimistic UI:
+   ראה סעיף 9 למטה לתיאור מלא.
+
+================================================================================
+     סעיף 7 — Apex Controller: LoanRequestFormController
+================================================================================
+
+------------------------------------------------------------------------
+LoanRequestFormController.cls
+------------------------------------------------------------------------
+
+public with sharing class LoanRequestFormController {
+
+    // שמירת בקשת הלוואה חדשה — מחזיר את הרשומה עם כל השדות הנדרשים
+    @AuraEnabled
+    public static LoanRequest__c saveLoanRequest(
+        Id      customerId,
+        Decimal loanAmount,
+        String  loanStatus
+    ) {
+        LoanRequest__c lr = LoanRequestService.createLoanRequest(
+            customerId, loanAmount, loanStatus
+        );
+        return LoanRequestSelector.getById(lr.Id);
+    }
+
+    // שליפת רשומה בודדת לפי Id — לרענון Component B לאחר שמירה
+    @AuraEnabled(cacheable=false)
+    public static LoanRequest__c getLoanRequest(Id recordId) {
+        return LoanRequestSelector.getById(recordId);
+    }
+
+    // שליפת 5 הבקשות האחרונות — לטעינה ראשונית של Component B
+    @AuraEnabled(cacheable=false)
+    public static List<LoanRequest__c> getRecentLoanRequests() {
+        return LoanRequestSelector.getRecent(LoanRequestConstants.MAX_RECENT_LOAN_REQUESTS);
+    }
+}
+
+------------------------------------------------------------------------
+LoanRequestSelector.cls — שכבת SOQL
+------------------------------------------------------------------------
+
+public with sharing class LoanRequestSelector {
+
+    public static LoanRequest__c getById(Id recordId) {
+        return [
+            SELECT Id, Name, LoanAmount__c, LoanStatus__c, CreatedDate,
+                   Customer__r.FirstName__c, Customer__r.LastName__c
+            FROM   LoanRequest__c
+            WHERE  Id = :recordId
+            LIMIT  1
+        ];
+    }
+
+    public static List<LoanRequest__c> getRecent(Integer maxRows) {
+        return [
+            SELECT Id, Name, LoanAmount__c, LoanStatus__c, CreatedDate,
+                   Customer__r.FirstName__c, Customer__r.LastName__c
+            FROM   LoanRequest__c
+            ORDER BY CreatedDate DESC
+            LIMIT  :maxRows
+        ];
+    }
+}
+
+------------------------------------------------------------------------
+LoanRequestService.cls — שכבת DML
+------------------------------------------------------------------------
+
+public with sharing class LoanRequestService {
+
+    public static LoanRequest__c createLoanRequest(
+        Id customerId, Decimal loanAmount, String loanStatus
+    ) {
+        LoanRequest__c lr = new LoanRequest__c(
+            Customer__c   = customerId,
+            LoanAmount__c = loanAmount,
+            LoanStatus__c = loanStatus
+        );
+        insert lr;
+        return lr;
+    }
+}
+
+------------------------------------------------------------------------
+7.1 הסבר — שכבות ה-Apex
+------------------------------------------------------------------------
+
+  Controller → Service → Selector:
+
+  • LoanRequestFormController: נקודת הכניסה מה-LWC בלבד.
+    מקבל פרמטרים, מאציל DML ל-Service ו-SOQL ל-Selector.
+    אינו מכיל SOQL ואינו מכיל DML.
+
+  • LoanRequestService: כל ה-DML על LoanRequest__c.
+    with sharing — משתמש לא יכול ליצור בקשה לרשומה שאין לו גישה אליה.
+
+  • LoanRequestSelector: כל ה-SOQL על LoanRequest__c.
+    מחזיר Customer__r.FirstName__c + LastName__c בשאילתה אחת
+    (בלי SOQL נוסף ב-JavaScript).
+
+  • @AuraEnabled (ללא cacheable): saveLoanRequest ו-getLoanRequest
+    לא מסומנים cacheable=true כי הם מחזירים נתונים שמשתנים —
+    cacheable=true מאפשר לסיילספורס להחזיר ערך ממטמון שלא עודכן.
+
+  • saveLoanRequest מחזיר את הרשומה השלמה (לא רק Id):
+    לאחר insert, הקוד קורא ל-LoanRequestSelector.getById() כדי לשלוף
+    את הרשומה עם CreatedDate ו-Customer__r — שדות שאינם זמינים
+    על הרשומה שמוחזרת ישירות מה-insert.
+
+================================================================================
+        סעיף 8 — זרימת הנתונים המלאה
+================================================================================
+
+── טעינת הדף ──────────────────────────────────────────────────────────────────
+
+[loanRequestSummary — Component B]
+    │  connectedCallback()
+    │    → subscribe(LoanRequestChannel, APPLICATION_SCOPE)  ← רישום LMS
+    │    → loadRecentRequests()
+    ↓
+[LoanRequestFormController.getRecentLoanRequests()]
+    ↓
+[LoanRequestSelector.getRecent(5)]
+    SOQL: SELECT ... FROM LoanRequest__c ORDER BY CreatedDate DESC LIMIT 5
+    ↓
+  Component B מציג את הרשימה עם spinner, ואז מסתיר את ה-spinner
+
+── שמירת בקשה ─────────────────────────────────────────────────────────────────
+
+[loanRequestForm — Component A]
+    │  המשתמש ממלא: Customer (record-picker) + Loan Amount + Loan Status
+    │  לחיצה על Save
+    │  isFormValid() — reportValidity() על כל השדות
+    │  isLoading = true → spinner מופיע, כפתורים מנוטרלים
+    │  saveLoanRequest({ customerId, loanAmount, loanStatus })
+    ↓
+[LoanRequestFormController.saveLoanRequest()]
+    ↓
+[LoanRequestService.createLoanRequest()]  → insert LoanRequest__c
+    ↓
+[LoanRequestSelector.getById(lr.Id)]      → SELECT עם Customer__r
+    ↓ מחזיר רשומה מלאה
+[loanRequestForm — Component A]
+    │  publish(LoanRequestChannel, { recordId, customerName, loanAmount, loanStatus })
+    │  showToast("Success")
+    │  handleReset() — מנקה את הטופס
+    │  isLoading = false → spinner מוסתר
+    ↓
+[loanRequestSummary — Component B]  ← הודעת LMS מגיעה (APPLICATION_SCOPE)
+    │  handleMessage(message):
+    │    1. buildItem() מה-LMS payload → prepend לרשימה (Optimistic)
+    │    2. .slice(0, MAX_RECENT_REQUESTS) — שמירה על מגבלת 5
+    │    3. getLoanRequest({ recordId }) — קריאה ל-Apex לנתונים סמכותיים
+    ↓
+[LoanRequestSelector.getById()]
+    SOQL: SELECT ... FROM LoanRequest__c WHERE Id = :recordId LIMIT 1
+    ↓
+  Component B מחליף את הפריט האופטימיסטי בנתוני Salesforce (כולל CreatedDate)
+
+================================================================================
+                  סעיף 9 — Optimistic UI Pattern
+================================================================================
+
+הבעיה: כאשר המשתמש שומר בקשה, Component B צריך להציג אותה מיד.
+אולם getLoanRequest() לוקח זמן (קריאת Apex → Salesforce → חזרה).
+אם מחכים לקריאה, יש השהיה מורגשת.
+
+הפתרון — Optimistic UI:
+
+  שלב 1 — הצגה מיידית (Optimistic):
+    LMS payload מגיע מיידית מ-Component A.
+    Component B בונה פריט רשימה מהנתונים ב-payload (ללא CreatedDate)
+    ומוסיף אותו לראש הרשימה באופן מיידי.
+    המשתמש רואה את הבקשה ב-Component B תוך מילישניות.
+
+  שלב 2 — רענון סמכותי:
+    getLoanRequest() מבצע קריאת Apex ומחזיר נתונים מ-Salesforce.
+    הנתונים כוללים: CreatedDate (מחושב ע"י Salesforce), Customer__r.FirstName__c.
+    Component B מחליף את הפריט האופטימיסטי בנתוני Salesforce.
+
+  תוצאה:
+    ← הרשימה מתעדכנת מיידית (UX מהיר)
+    ← הנתונים הסופיים הם סמכותיים מ-Salesforce (אמינות)
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │  LMS message received  → display immediately (Optimistic)           │
+  │  getLoanRequest() call → (background)                               │
+  │  SF data returned      → replace Optimistic with authoritative data │
+  └─────────────────────────────────────────────────────────────────────┘
+
+================================================================================
+           סעיף 10 — אתגרים ופתרונות
+================================================================================
+
+
+א) אתגר: תקשורת בין רכיבים ללא parent משותף
+   פתרון: Lightning Message Service עם APPLICATION_SCOPE.
+   CustomEvent לא יכול "להגיע" לרכיב שאינו ב-DOM subtree משותף.
+   LMS מדלג על עץ ה-DOM ופועל ברמת ה-Application.
+
+ב) אתגר: הצגת שם הלקוח לאחר בחירה ב-record-picker
+   פתרון: @wire(getRecord) reactive.
+   record-picker מחזיר רק את ה-Id של הלקוח — לא את שמו.
+   getRecord עם '$customerId' מבצע קריאה אוטומטית כל פעם שה-Id משתנה
+   ומחזיר FirstName__c + LastName__c ל-publish ב-LMS.
+
+ג) אתגר: שדה Customer Name הוא AutoNumber (CUST-0001) ולא שם קריא
+   פתרון: display-info + matching-info ב-lightning-record-picker.
+   display-info: { primaryField: 'FirstName__c', additionalFields: ['LastName__c'] }
+   גורם ל-picker להציג "ישראל ישראלי" במקום "CUST-0001".
+   matching-info מתאים את החיפוש לשדות השם.
+
+ד) אתגר: Salesforce לא מחזיר CreatedDate ברשומה שנוצרה ב-insert
+   פתרון: לאחר insert, קריאה נוספת ל-getById() מחזירה את הרשומה
+   עם CreatedDate + Customer__r relationship.
+   הנתונים המלאים מוחזרים ל-Component A ומשם ל-LMS payload.
+
+ה) אתגר: Memory leak מ-subscription שלא בוטל
+   פתרון: unsubscribe ב-disconnectedCallback.
+   בלי ביטול, ה-subscription ממשיך לרוץ גם אחרי שהרכיב מוסר מה-DOM.
+   disconnectedCallback מובטח להיקרא ע"י ה-framework.
+
+================================================================================
+   סעיף 11 — ארכיטקטורה ועיצוב מתוך README הפרויקט
+================================================================================
+
+------------------------------------------------------------------------
+11.1 עץ הארכיטקטורה המלא — חלק LWC
+------------------------------------------------------------------------
+
+LWC (Lightning Web Components)
+  ├── loanRequestForm        Component A — form input              (publishes via LMS)
+  ├── loanRequestSummary     Component B — recent requests list    (subscribes via LMS, APPLICATION_SCOPE)
+  ├── loanRequestConstants   Shared JS constants module            (isExposed: false)
+  └── LoanRequestFormController  @AuraEnabled entry point         (with sharing)
+          ├── LoanRequestService    Service Layer — DML            (with sharing)
+          └── LoanRequestSelector   Selector Layer — SOQL          (with sharing)
+
+------------------------------------------------------------------------
+11.2 אחריות כל רכיב ושכבה (Layer Responsibilities)
+------------------------------------------------------------------------
+
+  ┌───────────────────────────────┬───────────────┬──────────────────────────────────────────────────────────────────────────────┐
+  │ Class / Module                │ Sharing       │ Responsibility                                                               │
+  ├───────────────────────────────┼───────────────┼──────────────────────────────────────────────────────────────────────────────┤
+  │ loanRequestForm (LWC)         │ —             │ Component A — form input, validation, Apex call, LMS publish                 │
+  │ loanRequestSummary (LWC)      │ —             │ Component B — subscribes APPLICATION_SCOPE; shows 5 recent requests;         │
+  │                               │               │ optimistic prepend on new submission, then Apex refresh                      │
+  │ loanRequestConstants (LWC)    │ —             │ Shared JS constants: status options, badge classes, locale,                  │
+  │                               │               │ currency, object API name, max recent requests count                         │
+  │ LoanRequestFormController     │ with sharing  │ Thin @AuraEnabled controller — receives input from LWC,                     │
+  │                               │               │ delegates DML to LoanRequestService, SOQL to LoanRequestSelector             │
+  │ LoanRequestService            │ with sharing  │ Owns all DML against LoanRequest__c.                                        │
+  │                               │               │ DML is never executed directly in a controller.                              │
+  │ LoanRequestSelector           │ with sharing  │ Owns all SOQL against LoanRequest__c: getById() and getRecent(n)            │
+  └───────────────────────────────┴───────────────┴──────────────────────────────────────────────────────────────────────────────┘
+
+------------------------------------------------------------------------
+11.3 with sharing vs without sharing — הסבר
+------------------------------------------------------------------------
+
+  with sharing enforces record sharing rules — המשתמש רואה רק רשומות שיש לו גישה אליהן.
+  ה-LWC stack כולו רץ עם with sharing:
+
+  ┌────────────────────────────┬───────────────┬──────────────────────────────────────────────────┐
+  │ Class                      │ Sharing       │ סיבה                                             │
+  ├────────────────────────────┼───────────────┼──────────────────────────────────────────────────┤
+  │ LoanRequestFormController  │ with sharing  │ הגשת טופס חייבת לכבד הרשאות המשתמש              │
+  │ LoanRequestService         │ with sharing  │ DML — משתמש לא יוצר רשומה לרשומה שאין לו גישה  │
+  │ LoanRequestSelector        │ with sharing  │ SOQL — מחזיר רק רשומות שהמשתמש יכול לראות       │
+  └────────────────────────────┴───────────────┴──────────────────────────────────────────────────┘
+
+  הערה: with sharing אוכף שיתוף רשומות (Record Sharing) — לא FLS.
+  FLS שייך לבקרות ממשק משתמש, לא לקריאות selector פנימיות.
+  לכן הקוד משמיט WITH SECURITY_ENFORCED ב-SOQL.
+
+------------------------------------------------------------------------
+11.4 Selector Layer — עיצוב ומניעת כפילות שאילתות
+------------------------------------------------------------------------
+
+  כל SOQL שייך לקלאס Selector ייעודי. אין inline SOQL בשום controller, service,
+  או resource. התוצאה: שאילתות קלות לאיתור, לבדיקה, ולאופטימיזציה.
+
+  ┌─────────────────────────┬──────────────────┬──────────────────────────────────────────┐
+  │ Selector                │ Object           │ Queries                                  │
+  ├─────────────────────────┼──────────────────┼──────────────────────────────────────────┤
+  │ LoanRequestSelector     │ LoanRequest__c   │ getById() — לפי Id;                      │
+  │                         │                  │ getRecent(n) — N רשומות אחרונות          │
+  │ CustomerSelector        │ Customer__c      │ getByIds() — לפי Set<Id>, מחזיר Map      │
+  └─────────────────────────┴──────────────────┴──────────────────────────────────────────┘
+
+------------------------------------------------------------------------
+11.5 Service Layer — עיצוב ומניעת DML פזור
+------------------------------------------------------------------------
+
+  כל DML על אובייקט מסוים שייך לקלאס Service אחד בלבד.
+  Controller, Queueable, ו-REST resource לא מבצעים DML ישיר.
+
+  ┌─────────────────────┬──────────────────┬─────────────────────────────────────────┐
+  │ Service             │ Object           │ Callers                                 │
+  ├─────────────────────┼──────────────────┼─────────────────────────────────────────┤
+  │ LoanRequestService  │ LoanRequest__c   │ LoanRequestFormController               │
+  └─────────────────────┴──────────────────┴─────────────────────────────────────────┘
+
+  יתרון: תוספות עתידיות (validation, event publishing) מתבצעות פעם אחת
+  ב-Service ולא בכל caller בנפרד.
+
+------------------------------------------------------------------------
+11.6 Component Communication — Why LMS (מתוך README)
+------------------------------------------------------------------------
+
+  Component A ו-Component B אין להם parent משותף.
+  זה שולל CustomEvent bubbling ו-@api property binding —
+  שניהם מצריכים קשר parent-child ישיר.
+  המנגנון היחיד שמאפשר תקשורת בין שני רכיבים ממוקמים עצמאית הוא
+  Lightning Message Service עם APPLICATION_SCOPE.
+
+  ┌──────────────────────────────┬────────────────────────┬───────────────────────────────┐
+  │ Mechanism                    │ Requires shared parent │ Works across page regions     │
+  ├──────────────────────────────┼────────────────────────┼───────────────────────────────┤
+  │ CustomEvent + addEventListener│ Yes                   │ No                            │
+  │ @api property binding        │ Yes (direct)           │ No                            │
+  │ Lightning Message Service    │ No                     │ Yes                           │
+  └──────────────────────────────┴────────────────────────┴───────────────────────────────┘
+
+------------------------------------------------------------------------
+11.7 Data Flow (מתוך README)
+------------------------------------------------------------------------
+
+── On page load ──────────────────────────────────────────────────────────────
+
+[loanRequestSummary — Component B]
+    │  connectedCallback → getRecentLoanRequests()  @AuraEnabled
+    ↓
+[LoanRequestFormController]
+    ↓
+[LoanRequestSelector.getRecent(5)]    SOQL ORDER BY CreatedDate DESC LIMIT 5
+    ↓
+    Component B renders list of recent requests
+
+── On form submit ────────────────────────────────────────────────────────────
+
+[loanRequestForm — Component A]
+    │  validates input (lightning-record-picker enforces customer selection)
+    │  saveLoanRequest()  @AuraEnabled → spinner ON
+    ↓
+[LoanRequestFormController]           Controller Layer — thin entry point
+    ↓
+[LoanRequestService.createLoanRequest()]   Service Layer — insert LoanRequest__c
+    ↓  (returns sObject with Id)
+[LoanRequestSelector.getById()]       Selector Layer — SOQL with Customer__r
+    ↓  (returns full record)
+    │  publish(LoanRequestChannel__c, { recordId, customerName, loanAmount, loanStatus })
+    │  success toast → form reset → spinner OFF
+    ↓
+[loanRequestSummary — Component B]  ← subscribed with APPLICATION_SCOPE
+    │  optimistic prepend: buildItem() from LMS payload → prepend to list immediately
+    │
+    │  getLoanRequest()  @AuraEnabled → refresh that specific record
+    ↓
+[LoanRequestSelector.getById()]       authoritative data including CreatedDate
+    ↓
+    Component B replaces optimistic item with full SF record
+
+------------------------------------------------------------------------
+11.8 Optimistic UI Pattern (מתוך README)
+------------------------------------------------------------------------
+
+  Component B מציג נתונים מהודעת ה-LMS מיידית — לפני שקריאת ה-Apex מסתיימת —
+  כך שה-UI נראה מיידי. קריאת ה-Apex מחליפה אחר-כך את הנתונים האופטימיסטיים
+  בנתוני הרשומה הסמכותיים (כולל CreatedDate ו-Customer__r).
+
+  LMS message received  →  display immediately (optimistic)
+  getLoanRequest() call  →  running in background
+  SF data returned       →  display updated with authoritative data
+
+------------------------------------------------------------------------
+11.9 Design Decisions (מתוך README)
+------------------------------------------------------------------------
+
+  א) APPLICATION_SCOPE subscription:
+     ללא APPLICATION_SCOPE, subscriber מקבל הודעות מה-DOM subtree שלו בלבד.
+     מאחר ו-Component B ממוקם עצמאית (אין parent משותף עם A),
+     APPLICATION_SCOPE הכרחי. הרישום נוצר ב-connectedCallback
+     ומשוחרר ב-disconnectedCallback למניעת memory leaks.
+
+  ב) Shared constants module (c/loanRequestConstants):
+     כל הערכים הניתנים לשינוי מוצאו למודול utility ייעודי עם isExposed: false:
+     אפשרויות picklist, ברירת מחדל, מיפוי סטטוס-ל-CSS badge class,
+     קוד מטבע, locale, שם API של האובייקט. אף רכיב לא מכיל magic strings.
+
+  ג) Layering — controller stays thin:
+     LoanRequestFormController לא מכיל SOQL ולא מכיל DML.
+     כל כתיבות עוברות דרך LoanRequestService;
+     כל קריאות עוברות דרך LoanRequestSelector.
+     האחריות היחידה של ה-Controller היא לקבל פרמטרים @AuraEnabled
+     ולתאם בין השכבות.
+
+  ד) Customer selection — lightning-record-picker:
+     הטופס משתמש ב-lightning-record-picker במקום שדה טקסט חופשי.
+     ה-picker מוגדר עם display-info ו-matching-info להצגת
+     FirstName__c + LastName__c במקום שדה ה-AutoNumber (CUST-0001).
+     ה-Id של הרשומה מועבר ישירות ל-Controller — אין צורך ב-SOQL
+     לחיפוש הלקוח לפי שם, מה שמבטל שאילתה שלמה ו-edge cases נלווים.
+
+================================================================================
