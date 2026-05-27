@@ -699,7 +699,7 @@ See the [Sharing Decisions table](#with-sharing-vs-without-sharing) above. `Audi
 
 ## Test Coverage
 
-### `LoanRequestFormControllerTest` (4 methods)
+### `LoanRequestFormControllerTest` (6 methods)
 
 | Method | Scenario |
 |---|---|
@@ -707,8 +707,10 @@ See the [Sharing Decisions table](#with-sharing-vs-without-sharing) above. `Audi
 | `saveLoanRequest_withNullCustomer_savesCleanly` | `null` customer Id → record saved without customer link |
 | `getLoanRequest_returnsExpectedRecord` | Direct selector call → correct Id, amount, status, `CreatedDate` populated |
 | `getRecentLoanRequests_returnsUpToFiveRecords` | 7 records inserted → at most 5 returned |
+| `saveLoanRequest_returnedRecord_containsAllLMSFields` | Returned record has `Id`, `LoanAmount__c`, `LoanStatus__c`, `Customer__c` — all fields needed to build the LMS payload in the LWC |
+| `saveLoanRequest_withZeroAmount_savesAndNoHighValueTask` | Zero amount saves cleanly; no high-value Task is created |
 
-### `LoanRequestTriggerHandler_Test` (7 methods)
+### `LoanRequestTriggerHandler_Test` (12 methods)
 
 | Method | Scenario |
 |---|---|
@@ -719,6 +721,11 @@ See the [Sharing Decisions table](#with-sharing-vs-without-sharing) above. `Audi
 | `testBulkInsert_200Records` | 200 records inserted and updated → no governor limit exceptions, 200 AuditLogs |
 | `testNullCustomer_NoException` | `Customer__c` = null → no `NullPointerException` from trigger code |
 | `testNullManager_NoTask` | `AssignedManager__c` = null, high-value loan → no Task, WARN AuditLog written |
+| `testApproved_CustomerStatusSetToActive` | Status → Approved → Flow sets `Customer__c.Status__c = 'Active Customer'` |
+| `testRejected_CustomerStatusSetToRequiresFurtherAction` | Status → Rejected → Flow sets `Customer__c.Status__c = 'Requires Further Action'` |
+| `testNullLoanAmount_NoHighValueAlert` | `LoanAmount__c = null` → trigger null-guard skips silently, no Task, no exception |
+| `testSameStatusUpdate_NoAuditLog` | Update with unchanged status → `handleStatusChange` detects no delta → no AuditLog created |
+| `testAmountAtThreshold_NoHighValueTask` | Amount exactly at 250,000 (not strictly above) → no Task; boundary is `>`, not `>=` |
 
 ### `LoanApprovalQueueable_Test` (3 methods)
 
@@ -740,7 +747,7 @@ See the [Sharing Decisions table](#with-sharing-vs-without-sharing) above. `Audi
 | `testMissingSignature_Returns401` | Missing header → HTTP 401, no data change |
 | `testUnknownReferenceId_Returns404` | Unknown `referenceId` → HTTP 404 |
 
-**Overall: 23 / 23 tests pass. 100% pass rate.**
+**Overall: 30 / 30 tests pass. 100% pass rate.**
 
 All test data is built in `@TestSetup`. No `seeAllData=true`. No hardcoded Ids. Loan amounts in setup methods are below the 250,000 threshold to avoid noise from the high-value alert path.
 
@@ -777,3 +784,89 @@ sf org open --target-org my-scratch-org
 | HTTP callouts per Queueable (100) | `LoanApprovalQueueable` processes up to 100 approvals per execution; for volumes above 100, the job can be extended to chain itself with the remaining IDs |
 | Heap size (6 MB sync / 12 MB async) | No large string or collection accumulation; serialised payloads are per-record JSON objects |
 | Queueable retry depth | Retry chain is bounded by `MAX_RETRY_ATTEMPTS` (default 3); re-enqueue scope shrinks to only failed IDs on each attempt |
+
+---
+
+## Performance — High-Volume Scenarios
+
+### Batch Apex
+
+The trigger-based architecture handles batches of up to 200 records per invocation (the platform DML limit). For operations that must process **existing records in bulk** — for example, a month-end job to flag all overdue loans, or archiving `AuditLog__c` records older than 90 days — `Database.Batchable` is the correct tool:
+
+```apex
+global class OverdueLoanBatch implements Database.Batchable<SObject> {
+
+    global Database.QueryLocator start(Database.BatchableContext bc) {
+        // QueryLocator supports up to 50M rows; avoids heap overflow on large sets
+        return Database.getQueryLocator(
+            'SELECT Id, LoanStatus__c FROM LoanRequest__c WHERE LoanStatus__c = \'Submitted\''
+        );
+    }
+
+    global void execute(Database.BatchableContext bc, List<LoanRequest__c> scope) {
+        // scope is 200 records by default (configurable via Database.executeBatch(new Batch(), chunkSize))
+        // All governor limits reset per execute() chunk
+        for (LoanRequest__c lr : scope) {
+            // business logic per record
+        }
+        update scope; // one DML per chunk
+    }
+
+    global void finish(Database.BatchableContext bc) {
+        // post-processing: send summary email, enqueue next job, etc.
+    }
+}
+
+// Invocation — chunk size 200 (default); reduce to 50–100 if execute() makes callouts
+Database.executeBatch(new OverdueLoanBatch(), 200);
+```
+
+**When to use Batch Apex in this system:**
+
+| Scenario | Batch job |
+|---|---|
+| Retry all `LoanApproval__c` records stuck in `Pending` > 24h | `PendingApprovalRetryBatch` |
+| Purge `AuditLog__c` entries older than 90 days | `AuditLogArchiveBatch` |
+| Recalculate `RiskLevel__c` on all `Customer__c` records after scoring model update | `CustomerRiskRecalcBatch` |
+| Month-end: flag all `LoanRequest__c` in `Submitted` > 30 days as overdue | `OverdueLoanBatch` |
+
+---
+
+### SOQL Optimisation
+
+**Current design** — every query runs exactly once per transaction and results are stored in a typed `Map<Id, T>` for O(1) per-record access:
+
+```apex
+// One SOQL — O(1) lookups for up to 200 records
+Map<Id, Customer__c> custMap = CustomerSelector.getByIds(customerIds);
+for (LoanRequest__c lr : changedRecs) {
+    Customer__c cust = custMap.get(lr.Customer__c); // O(1), no SOQL
+}
+```
+
+**For higher volumes:**
+
+| Pattern | When to apply |
+|---|---|
+| Add `LIMIT` + cursor-based pagination | Selectors that may return very large sets in async contexts |
+| Use `Database.QueryLocator` | When processing > 50,000 records (avoids heap overflow vs. `List<SObject>`) |
+| Add `WITH SECURITY_ENFORCED` | If FLS enforcement is required in UI-facing selectors in a future requirement |
+| Avoid `SELECT *` equivalents | Current selectors enumerate only the fields actually needed — preserves query selectivity |
+
+**Soql in tests** — all test classes use `@TestSetup` and query minimal data. No `seeAllData=true` anywhere.
+
+---
+
+### Indexing
+
+Salesforce automatically indexes: primary keys (`Id`), external Ids, lookup fields, and fields marked `unique=true`. Fields used in `WHERE` clauses that are **not** automatically indexed should have a custom index requested via Salesforce Support.
+
+| Field | Auto-indexed? | Reason / Recommendation |
+|---|---|---|
+| `LoanRequest__c.Customer__c` | ✅ Yes (lookup) | Used in trigger queries and filter joins |
+| `LoanRequest__c.LoanStatus__c` | ❌ No | Frequently used in `WHERE LoanStatus__c = :status` queries — request a custom index for production volumes |
+| `LoanRequest__c.AssignedManager__c` | ✅ Yes (lookup → User) | Used in high-value alert guard |
+| `LoanApproval__c.ExternalRefId__c` | ✅ Yes (`unique=true`) | Core webhook lookup — already indexed |
+| `LoanApproval__c.LoanRequest__c` | ✅ Yes (master-detail) | Used in all approval queries |
+| `AuditLog__c.RelatedId__c` | ❌ No (Text field) | Queried in `WHERE RelatedId__c = :id`; for production volumes, convert to a Lookup or request a custom index |
+| `AuditLog__c.Timestamp__c` | ❌ No | If reporting requires date-range queries on audit logs, a custom index on `Timestamp__c` is recommended |

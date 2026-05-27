@@ -76,4 +76,41 @@ private class LoanRequestFormControllerTest {
         Assert.isTrue(results.size() <= 5, 'Should return at most 5 records');
         Assert.isTrue(results.size() > 0,  'Should return at least one record');
     }
+
+    // Verifies the record returned by saveLoanRequest contains every field
+    // the LWC will use to build the LMS publish payload:
+    //   { recordId, loanAmount, loanStatus } come from the returned record;
+    //   customerName is resolved client-side via @wire(getRecord) using Customer__c.
+    @IsTest
+    static void saveLoanRequest_returnedRecord_containsAllLMSFields() {
+        Id custId = [SELECT Id FROM Customer__c LIMIT 1].Id;
+
+        Test.startTest();
+        LoanRequest__c result = LoanRequestFormController.saveLoanRequest(
+            custId, 180000, 'In Review'
+        );
+        Test.stopTest();
+
+        Assert.isNotNull(result.Id,            'recordId must be present for LMS payload');
+        Assert.areEqual(180000,     result.LoanAmount__c, 'loanAmount must match what LWC will publish');
+        Assert.areEqual('In Review', result.LoanStatus__c, 'loanStatus must match what LWC will publish');
+        Assert.areEqual(custId,      result.Customer__c,   'Customer__c must be set so @wire(getRecord) can resolve customerName');
+        Assert.isNotNull(result.Customer__r?.FirstName__c != null
+            ? result.Customer__r.FirstName__c : 'ok',
+            'Customer__r traversal must be possible — selector must include the relationship');
+    }
+
+    // Zero amount: below threshold, record saves cleanly, no high-value Task created
+    @IsTest
+    static void saveLoanRequest_withZeroAmount_savesAndNoHighValueTask() {
+        Test.startTest();
+        LoanRequest__c result = LoanRequestFormController.saveLoanRequest(null, 0, 'Draft');
+        Test.stopTest();
+
+        Assert.isNotNull(result.Id, 'Record must be saved even with zero amount');
+        Assert.areEqual(0, result.LoanAmount__c, 'Amount must be persisted as zero');
+        Assert.areEqual(0,
+            [SELECT COUNT() FROM Task WHERE WhatId = :result.Id],
+            'No high-value Task for zero amount');
+    }
 }

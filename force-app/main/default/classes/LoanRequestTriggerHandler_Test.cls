@@ -169,4 +169,109 @@ public class LoanRequestTriggerHandler_Test {
         System.assertEquals(LoanRequestConstants.SEVERITY_WARN,               logs[0].Severity__c, 'Severity must be WARN');
         System.assertEquals(LoanRequestConstants.ACTION_HIGH_VALUE_NO_MANAGER, logs[0].Action__c,   'Action must be HighValueNoManager');
     }
+
+    // Flow: Status → Approved → Customer.Status__c = 'Active Customer'
+    @isTest
+    static void testApproved_CustomerStatusSetToActive() {
+        Customer__c cust = getCustomer();
+        LoanRequest__c lr = new LoanRequest__c(
+            Customer__c   = cust.Id,
+            LoanAmount__c = 100000,
+            LoanStatus__c = LoanRequestConstants.STATUS_DRAFT
+        );
+        insert lr;
+
+        Test.startTest();
+        lr.LoanStatus__c = LoanRequestConstants.STATUS_APPROVED;
+        update lr;
+        Test.stopTest();
+
+        Customer__c updated = [SELECT Status__c FROM Customer__c WHERE Id = :cust.Id];
+        System.assertEquals('Active Customer', updated.Status__c,
+            'Flow must set Customer Status to Active Customer on loan approval');
+    }
+
+    // Flow: Status → Rejected → Customer.Status__c = 'Requires Further Action'
+    @isTest
+    static void testRejected_CustomerStatusSetToRequiresFurtherAction() {
+        Customer__c cust = getCustomer();
+        LoanRequest__c lr = new LoanRequest__c(
+            Customer__c   = cust.Id,
+            LoanAmount__c = 100000,
+            LoanStatus__c = LoanRequestConstants.STATUS_DRAFT
+        );
+        insert lr;
+
+        Test.startTest();
+        lr.LoanStatus__c = LoanRequestConstants.STATUS_REJECTED;
+        update lr;
+        Test.stopTest();
+
+        Customer__c updated = [SELECT Status__c FROM Customer__c WHERE Id = :cust.Id];
+        System.assertEquals('Requires Further Action', updated.Status__c,
+            'Flow must set Customer Status to Requires Further Action on loan rejection');
+    }
+
+    // Null LoanAmount__c → trigger null-guard fires → no Task, no exception
+    @isTest
+    static void testNullLoanAmount_NoHighValueAlert() {
+        Customer__c cust = getCustomer();
+        LoanRequest__c lr = new LoanRequest__c(
+            Customer__c        = cust.Id,
+            LoanAmount__c      = null,
+            LoanStatus__c      = LoanRequestConstants.STATUS_DRAFT,
+            AssignedManager__c = UserInfo.getUserId()
+        );
+        Test.startTest();
+        insert lr;
+        Test.stopTest();
+
+        System.assertEquals(0, [SELECT COUNT() FROM Task WHERE WhatId = :lr.Id],
+            'No Task expected when LoanAmount__c is null — trigger must null-guard silently');
+        LoanRequest__c saved = [SELECT AlertSent__c FROM LoanRequest__c WHERE Id = :lr.Id];
+        System.assertEquals(false, saved.AlertSent__c,
+            'AlertSent__c must remain false when amount is null');
+    }
+
+    // Update with the same status value → handleStatusChange detects no real change → no AuditLog
+    @isTest
+    static void testSameStatusUpdate_NoAuditLog() {
+        Customer__c cust = getCustomer();
+        LoanRequest__c lr = new LoanRequest__c(
+            Customer__c   = cust.Id,
+            LoanAmount__c = 50000,
+            LoanStatus__c = LoanRequestConstants.STATUS_DRAFT
+        );
+        insert lr;
+
+        Test.startTest();
+        lr.LoanStatus__c = LoanRequestConstants.STATUS_DRAFT; // no actual change
+        update lr;
+        Test.stopTest();
+
+        System.assertEquals(0,
+            [SELECT COUNT() FROM AuditLog__c WHERE RelatedId__c = :String.valueOf(lr.Id)],
+            'No AuditLog expected when LoanStatus__c value did not change');
+    }
+
+    // Amount exactly at the threshold (not strictly above) → no high-value Task
+    @isTest
+    static void testAmountAtThreshold_NoHighValueTask() {
+        Customer__c cust = getCustomer();
+        LoanRequest__c lr = new LoanRequest__c(
+            Customer__c        = cust.Id,
+            LoanAmount__c      = LoanRequestConstants.HIGH_VALUE_THRESHOLD,
+            LoanStatus__c      = LoanRequestConstants.STATUS_DRAFT,
+            AssignedManager__c = UserInfo.getUserId()
+        );
+        Test.startTest();
+        insert lr;
+        Test.stopTest();
+
+        System.assertEquals(0, [SELECT COUNT() FROM Task WHERE WhatId = :lr.Id],
+            'No Task when amount equals threshold exactly — rule is strictly greater-than');
+        LoanRequest__c saved = [SELECT AlertSent__c FROM LoanRequest__c WHERE Id = :lr.Id];
+        System.assertEquals(false, saved.AlertSent__c,
+            'AlertSent__c must remain false at the boundary');
+    }
 }
